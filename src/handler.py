@@ -1,0 +1,197 @@
+"""RunPod serverless handler for the Krea2 pipeline.
+
+One endpoint serves both workflows. They share every model — same checkpoint,
+CLIP, VAE and LoRAs — so a second endpoint would mean a second copy of ~40GB and
+a second cold start for no benefit. Routing both job types here also keeps the
+worker warm across a mixed batch, which is where the real time saving is.
+
+Job input
+---------
+    mode            "single" | "carousel"
+    image_url       reference photo, fetched over HTTP
+    image_b64       ...or inline base64 (image_url wins if both are given)
+    lora_name       character LoRA filename, already on the volume
+    lora_url        ...or a URL to fetch it from, if not present yet
+    trigger_word    e.g. "3lm1ra"
+    description     e.g. "young woman with long platinum blonde hair"
+    gemini_api_key  from Radar's settings; never baked into the graph
+    seed            optional, for reproducing a specific run
+
+Job output
+----------
+    images          list of base64 PNGs — 1 for single, 4 for carousel
+    count, mode, seed, duration_s
+
+`images` is always a list. A carousel's four entries are slides of one post, not
+four alternatives, and the caller is expected to keep them ordered.
+"""
+from __future__ import annotations
+
+import base64
+import logging
+import os
+import time
+import uuid
+from pathlib import Path
+
+import requests
+
+import comfy
+import graph as graph_mod
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+log = logging.getLogger("handler")
+
+LORA_DIR = Path(os.getenv("LORA_DIR", "/runpod-volume/ComfyUI/models/loras"))
+FETCH_TIMEOUT = 180
+
+# A carousel legitimately runs ten minutes; a single, two or three. One ceiling
+# generous enough for both, since exceeding it means stuck rather than slow.
+JOB_TIMEOUT = int(os.getenv("JOB_TIMEOUT", "1800"))
+
+
+class JobError(RuntimeError):
+    """The job input is unusable."""
+
+
+def _require(payload: dict, key: str) -> str:
+    value = (payload.get(key) or "").strip()
+    if not value:
+        raise JobError(f"{key} is required")
+    return value
+
+
+def _fetch_reference(payload: dict) -> bytes:
+    """The reference photo, from a URL or inline base64."""
+    url = (payload.get("image_url") or "").strip()
+    if url:
+        r = requests.get(url, timeout=FETCH_TIMEOUT)
+        if not r.ok:
+            raise JobError(f"could not fetch image_url: HTTP {r.status_code}")
+        if not r.content:
+            raise JobError("image_url returned an empty body")
+        return r.content
+
+    b64 = (payload.get("image_b64") or "").strip()
+    if b64:
+        try:
+            return base64.b64decode(b64)
+        except Exception as exc:
+            raise JobError(f"image_b64 is not valid base64: {exc}")
+
+    raise JobError("one of image_url or image_b64 is required")
+
+
+def _ensure_lora(payload: dict) -> str:
+    """Make sure the character LoRA is on the volume; return its filename.
+
+    Persona LoRAs are per-character and change rarely, so they live on the
+    network volume. lora_url is the escape hatch for a persona whose LoRA has
+    not been seeded there yet — fetched once, then resident like the rest.
+    """
+    name = _require(payload, "lora_name")
+    if "/" in name or "\\" in name:
+        raise JobError("lora_name must be a bare filename")
+
+    target = LORA_DIR / name
+    if target.exists() and target.stat().st_size > 0:
+        return name
+
+    url = (payload.get("lora_url") or "").strip()
+    if not url:
+        raise JobError(
+            f"LoRA {name!r} is not on the volume and no lora_url was supplied"
+        )
+
+    log.info("fetching character LoRA %s", name)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".part")
+    with requests.get(url, stream=True, timeout=FETCH_TIMEOUT) as r:
+        if not r.ok:
+            raise JobError(f"could not fetch lora_url: HTTP {r.status_code}")
+        with open(tmp, "wb") as fh:
+            for chunk in r.iter_content(1 << 20):
+                fh.write(chunk)
+    # Rename only once complete, so a killed fetch cannot leave a truncated
+    # file that looks resident to the next job.
+    tmp.rename(target)
+    return name
+
+
+def run_job(payload: dict) -> dict:
+    started = time.time()
+
+    mode = (payload.get("mode") or "single").strip().lower()
+    if mode not in graph_mod.MODES:
+        raise JobError(f"mode must be one of {graph_mod.MODES}, got {mode!r}")
+
+    trigger_word = _require(payload, "trigger_word")
+    description = _require(payload, "description")
+    gemini_key = _require(payload, "gemini_api_key")
+    lora_name = _ensure_lora(payload)
+    reference = _fetch_reference(payload)
+    seed = payload.get("seed")
+
+    comfy.wait_until_ready()
+
+    uploaded = comfy.upload_image(reference, f"ref_{uuid.uuid4().hex}.png")
+    log.info("reference uploaded as %s", uploaded)
+
+    job_graph = graph_mod.patch(
+        mode,
+        image_filename=uploaded,
+        lora_name=lora_name,
+        trigger_word=trigger_word,
+        description=description,
+        gemini_api_key=gemini_key,
+        seed=seed,
+    )
+    log.info("patched %s graph: %s", mode, graph_mod.describe(job_graph))
+
+    node = graph_mod.output_node(job_graph)
+    prompt_id = comfy.submit(job_graph, client_id=f"krea2-{uuid.uuid4().hex}")
+    log.info("submitted %s as %s", mode, prompt_id)
+
+    entry = comfy.wait(prompt_id, timeout=JOB_TIMEOUT)
+    images = comfy.collect_images(entry, node)
+
+    expected = 4 if mode == "carousel" else 1
+    if len(images) != expected:
+        # Not fatal — the caller can still use what came back — but it means the
+        # graph changed shape, which is worth seeing in the logs immediately.
+        log.warning("%s produced %d image(s), expected %d", mode, len(images), expected)
+
+    return {
+        "mode": mode,
+        "count": len(images),
+        "seed": seed,
+        "duration_s": round(time.time() - started, 1),
+        "images": [base64.b64encode(i).decode() for i in images],
+    }
+
+
+def handler(event: dict) -> dict:
+    """RunPod entry point. Errors come back as {"error": ...}, never a crash."""
+    payload = (event or {}).get("input") or {}
+    try:
+        return run_job(payload)
+    except JobError as exc:
+        log.error("bad job input: %s", exc)
+        return {"error": str(exc), "kind": "input"}
+    except comfy.ComfyTimeout as exc:
+        log.error("timeout: %s", exc)
+        comfy.free_memory()
+        return {"error": str(exc), "kind": "timeout"}
+    except Exception as exc:
+        log.exception("job failed")
+        comfy.free_memory()
+        return {"error": f"{type(exc).__name__}: {exc}", "kind": "render"}
+
+
+if __name__ == "__main__":
+    import runpod
+
+    runpod.serverless.start({"handler": handler})
