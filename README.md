@@ -40,6 +40,25 @@ and routing both here keeps the worker warm across a mixed batch.
 Failures return `{"error": "...", "kind": "input" | "render" | "timeout"}` — the
 worker never crashes on a bad job.
 
+## Deploy
+
+Pushing to `main` builds and pushes the image via GitHub Actions. Two repo
+secrets are needed (Settings → Secrets and variables → Actions):
+
+| secret | value |
+|---|---|
+| `DOCKERHUB_USERNAME` | your Docker Hub username |
+| `DOCKERHUB_TOKEN` | an access token, **not** your password |
+
+Each build publishes two tags: `krea2-worker:latest` and
+`krea2-worker:<commit-sha>`.
+
+**Point the RunPod endpoint at the sha, not at `latest`.** RunPod caches images
+by tag, so an endpoint pinned to `latest` can keep serving a stale build after a
+push — and when something breaks you have no way to say which build is running.
+With a sha tag, deploying is changing one string and rolling back is changing it
+back. The workflow prints the exact tag to paste.
+
 ## Setup
 
 Models live on a **network volume**, not in the image. Seed it once:
