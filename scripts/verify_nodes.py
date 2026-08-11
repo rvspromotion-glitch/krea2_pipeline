@@ -24,13 +24,35 @@ import sys
 from pathlib import Path
 
 
+def _force_cpu_mode() -> None:
+    """Make ComfyUI pick the CPU device. There is no GPU on a build machine.
+
+    Passing --cpu on the command line does not work here. comfy/cli_args.py only
+    reads sys.argv when comfy.options.args_parsing has been turned on, and the
+    only thing that turns it on is main.py — so importing `nodes` directly gets
+    `parse_args([])`, every flag at its default, and model_management calls
+    torch.cuda.current_device() at import. That is a hard failure on a runner:
+
+        RuntimeError: Found no NVIDIA driver on your system
+
+    So set the flag on the parsed namespace instead, before anything that reads
+    it is imported. cli_args is imported by every ComfyUI module that cares, and
+    `cpu` has been the attribute name throughout.
+    """
+    try:
+        from comfy.cli_args import args as comfy_args
+    except Exception as exc:                      # pragma: no cover
+        print(f"[verify] note: could not preset ComfyUI args ({exc}); "
+              f"continuing and hoping the import is CPU-safe")
+        return
+    comfy_args.cpu = True
+
+
 def _load_comfy_registry(comfy_dir: Path):
     """Import ComfyUI far enough to populate NODE_CLASS_MAPPINGS."""
-    # comfy.cli_args parses sys.argv at import time, and the build machine has
-    # no GPU. Must be set before anything under ComfyUI is imported.
-    sys.argv = [sys.argv[0], "--cpu"]
     sys.path.insert(0, str(comfy_dir))
     os.chdir(comfy_dir)
+    _force_cpu_mode()
 
     import nodes  # noqa: E402  (only importable after the path insert above)
 
@@ -85,7 +107,22 @@ def main() -> int:
 
     required = _required_class_types(workflow_dir)
     every = sorted(set().union(*required.values()))
-    nodes = _load_comfy_registry(comfy_dir)
+
+    try:
+        nodes = _load_comfy_registry(comfy_dir)
+    except Exception as exc:
+        # Distinguish "the image is wrong" from "this machine has no GPU", which
+        # is normal here and never a reason to fail a build.
+        text = f"{type(exc).__name__}: {exc}"
+        print(f"\n[verify] could not load the node registry — {text}")
+        if "NVIDIA driver" in text or "CUDA" in text or "cuda" in text:
+            print("\n  This is a GPU probe at import time, not a missing node.\n"
+                  "  ComfyUI should be in CPU mode here; if a custom node forces\n"
+                  "  CUDA on import it cannot be checked on a build machine.\n"
+                  "  Rebuild with --build-arg VERIFY_NODES=0 to skip this step,\n"
+                  "  and check the graphs by running one job instead.")
+        raise
+
     registry = nodes.NODE_CLASS_MAPPINGS
 
     missing = {name: sorted(t for t in types if t not in registry)

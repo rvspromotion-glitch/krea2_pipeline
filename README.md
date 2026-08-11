@@ -163,6 +163,15 @@ package before it serves anything. Building with `PRUNE_UNUSED_NODES=1` does it
 automatically; it is off by default because a package can matter by patching
 something globally on import, which no static check can see.
 
+This runs CPU-only — registering nodes is an import, not a render. ComfyUI has
+to be *told* that, and not via `--cpu`: `comfy/cli_args.py` only reads `sys.argv`
+once `main.py` has enabled arg parsing, so importing `nodes` directly leaves
+every flag at its default and `model_management` calls
+`torch.cuda.current_device()` at import. The flag is set on the parsed namespace
+instead. If a custom node package probes CUDA on import regardless, nothing here
+can check it on a build machine — build with `--build-arg VERIFY_NODES=0` and
+check the graphs by running one job instead.
+
 ## What changed from the ComfyUI exports
 
 The graphs in `workflows/` are the hand exports with four edits:

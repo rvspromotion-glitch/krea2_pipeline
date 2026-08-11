@@ -122,9 +122,18 @@ COPY scripts/verify_nodes.py /app/scripts/verify_nodes.py
 # custom_nodes.txt. Set PRUNE_UNUSED_NODES=1 to delete the ones that supply
 # nothing; off by default because a package can matter by patching something at
 # import time, which no static check can see.
+#
+# VERIFY_NODES=0 is the escape hatch: a node package that insists on CUDA at
+# import cannot be checked on a machine with no GPU, and that should cost the
+# check rather than the whole build.
 ARG PRUNE_UNUSED_NODES=0
-RUN python /app/scripts/verify_nodes.py \
-      $([ "${PRUNE_UNUSED_NODES}" = "1" ] && echo --prune)
+ARG VERIFY_NODES=1
+RUN if [ "${VERIFY_NODES}" = "1" ]; then \
+      python /app/scripts/verify_nodes.py \
+        $([ "${PRUNE_UNUSED_NODES}" = "1" ] && echo --prune); \
+    else \
+      echo "[verify] skipped (VERIFY_NODES=0)"; \
+    fi
 
 # Last, so a code change rebuilds and re-pulls only these.
 COPY models.txt /app/models.txt
