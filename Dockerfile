@@ -23,16 +23,27 @@
 
 ARG CUDA_VERSION=12.4.1
 ARG PYTHON_VERSION=3.10
-# All three pinned, as a set. torchvision and torchaudio are compiled against a
-# specific torch ABI, so pinning torch and letting the other two float resolves
-# them to whatever is newest and produces an image that installs cleanly and
-# then dies on `import torchaudio` with an undefined symbol. ComfyUI imports
-# torchaudio unconditionally (comfy/sd.py -> lightricks audio_vae), so that is
-# not a corner case — it is every job.
-ARG TORCH_VERSION=2.6.0
-ARG TORCHVISION_VERSION=0.21.0
-ARG TORCHAUDIO_VERSION=2.6.0
-ARG TORCH_INDEX=https://download.pytorch.org/whl/cu124
+# All three pinned, as a set, and new enough for the ComfyUI pinned below.
+#
+# Two separate traps, both of which broke a build here:
+#
+#  * torchvision and torchaudio are compiled against a specific torch ABI. Pin
+#    torch alone and pip resolves the other two to whatever is newest, giving
+#    an image that installs cleanly and dies on `import torchaudio` with an
+#    undefined symbol.
+#  * Too *old* a torch fails differently. ComfyUI now imports comfy_kitchen at
+#    startup, which registers custom ops annotated with PEP 585 generics
+#    (`list[int]`); torch only learned to infer schemas from those after 2.6,
+#    so 2.6 raises ValueError before ComfyUI can start at all.
+#
+# 2.11.0 is the newest torch with a matching torchaudio on this index.
+# The base image's CUDA version is unrelated — the torch wheels carry their own
+# CUDA runtime as nvidia-* packages, which is why cu126 wheels sit happily on a
+# 12.4 base.
+ARG TORCH_VERSION=2.11.0
+ARG TORCHVISION_VERSION=0.26.0
+ARG TORCHAUDIO_VERSION=2.11.0
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cu126
 
 # ═══════════════════════════════════════════════════════════════════════════
 # builder — the venv, ComfyUI, the custom nodes. Needs a compiler; ships none.
@@ -44,7 +55,7 @@ ARG TORCH_VERSION
 ARG TORCHVISION_VERSION
 ARG TORCHAUDIO_VERSION
 ARG TORCH_INDEX
-ARG COMFYUI_REF=master
+ARG COMFYUI_REF=v0.9.2
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -81,8 +92,13 @@ COPY constraints.txt /build/constraints.txt
 ENV PIP_CONSTRAINT=/build/constraints.txt
 RUN pip install --no-cache-dir --prefer-binary -r /build/constraints.txt
 
-# ComfyUI. Pin COMFYUI_REF to a sha once a build is green — `master` is a moving
-# target and a silent upstream change is the hardest kind of Sunday failure.
+# ComfyUI, pinned to a release rather than master.
+#
+# master moving under a pinned torch is what made this repo hard to build:
+# every rebuild picked up whatever ComfyUI had merged that day, and a new
+# core dependency (comfy_kitchen) needed a newer torch than was pinned. Two
+# moving parts, and the failure surfaced as an unrelated-looking traceback.
+# A tag fixes one of them.
 RUN git clone --depth 1 --branch ${COMFYUI_REF} \
         https://github.com/comfyanonymous/ComfyUI.git /comfyui \
     && rm -rf /comfyui/.git \
