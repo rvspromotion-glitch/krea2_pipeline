@@ -46,9 +46,30 @@ def _fake_comfy(tmp_path: Path, *, packages: dict[str, list[str]],
         pkg.mkdir()
         (pkg / "__init__.py").write_text("MAPPINGS = {}\n")
 
+    # comfy/cli_args.py, and a nodes.py that probes the GPU at import unless
+    # CPU mode was set on that namespace first. This is what the real ComfyUI
+    # does, and getting it wrong failed a build: passing --cpu on the command
+    # line has no effect, because cli_args only reads sys.argv when main.py has
+    # enabled arg parsing.
+    package = comfy / "comfy"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "cli_args.py").write_text(textwrap.dedent("""
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--cpu", action="store_true")
+        args = parser.parse_args([])       # deliberately ignores sys.argv
+    """))
+
     (comfy / "nodes.py").write_text(textwrap.dedent(f"""
         import importlib.util, sys
         from pathlib import Path
+        from comfy.cli_args import args
+
+        if not args.cpu:
+            raise RuntimeError(
+                "Found no NVIDIA driver on your system. Please check that you "
+                "have an NVIDIA GPU and installed a driver")
 
         NODE_CLASS_MAPPINGS = {{}}
         for _t in {core!r}:
@@ -92,6 +113,36 @@ def test_passes_when_every_node_resolves(complete):
     result = _run(complete)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "OK" in result.stdout
+
+
+def test_it_runs_comfyui_in_cpu_mode(complete):
+    """The regression: a build machine has no GPU.
+
+    ComfyUI probes CUDA at import unless CPU mode is set, and `--cpu` on the
+    command line does not set it — cli_args only reads sys.argv once main.py
+    enables arg parsing, which importing `nodes` directly never does. The fake
+    ComfyUI here raises the same driver error if the flag was not applied.
+    """
+    result = _run(complete)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "NVIDIA driver" not in result.stdout + result.stderr
+
+
+def test_a_gpu_probe_is_explained_rather_than_left_as_a_traceback(tmp_path):
+    """If a custom node forces CUDA on import, say so and name the way out."""
+    required = sorted(_required_types())
+    comfy = _fake_comfy(tmp_path, packages={"pkg-a": required}, core=[])
+    # A package that probes the GPU on import whatever mode ComfyUI is in —
+    # nothing this script can do about that, so it must say so plainly.
+    (comfy / "nodes.py").write_text(
+        "raise RuntimeError('Found no NVIDIA driver on your system.')\n")
+
+    result = _run(comfy)
+
+    assert result.returncode != 0
+    assert "NVIDIA driver" in result.stdout
+    assert "VERIFY_NODES=0" in result.stdout
 
 
 def test_fails_when_a_node_is_missing(tmp_path):
