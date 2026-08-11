@@ -189,3 +189,47 @@ def test_custom_nodes_list_is_well_formed():
         assert "/" in parts[1], f"custom_nodes.txt:{number} repo needs owner/name: {line}"
         rows.append(parts[0])
     assert len(rows) == len(set(rows)), "duplicate package name in custom_nodes.txt"
+
+
+# ── Name collisions with ComfyUI ─────────────────────────────────────────────
+
+# ComfyUI imports these by bare name from its own root. Anything of ours on the
+# same sys.path with one of these names wins, and ComfyUI does not start.
+# src/comfy.py did exactly that: main.py died on its first line with
+# "'comfy' is not a package", the container stayed up, and every job spent ten
+# minutes waiting for a server that was never coming.
+COMFYUI_TOP_LEVEL = {
+    "comfy", "comfy_extras", "comfy_execution", "comfy_api", "comfy_config",
+    "comfy_api_nodes", "app", "utils", "nodes", "execution", "folder_paths",
+    "server", "main", "latent_preview", "node_helpers", "cuda_malloc",
+    "hook_breaker_ac10a0", "protocol",
+}
+
+
+def test_no_module_of_ours_shadows_a_comfyui_one():
+    for path in (REPO / "src").glob("*.py"):
+        assert path.stem not in COMFYUI_TOP_LEVEL, (
+            f"src/{path.name} shadows ComfyUI's {path.stem!r} — rename it, or "
+            f"ComfyUI will not start")
+
+
+def test_the_image_does_not_put_our_code_on_the_global_path():
+    """PYTHONPATH in ENV applies to ComfyUI too, which is how the shadowing bit."""
+    assert "PYTHONPATH=/app/src" not in DOCKERFILE.replace("# ", ""), \
+        "set PYTHONPATH for the handler in entrypoint.sh, not image-wide"
+
+
+def test_comfyui_is_started_without_our_path():
+    entrypoint = (REPO / "entrypoint.sh").read_text()
+    launch = next(l for l in entrypoint.splitlines() if "main.py" in l and "python3" in l)
+    assert "-u PYTHONPATH" in launch, f"ComfyUI must not inherit PYTHONPATH: {launch}"
+
+
+def test_the_entrypoint_supervises_both_processes():
+    """A subshell cannot wait on a process it did not start — the previous
+    version printed 'not a child of this shell' and supervised nothing, so a
+    dead ComfyUI left the worker up failing every job."""
+    entrypoint = (REPO / "entrypoint.sh").read_text()
+    assert "wait -n" in entrypoint
+    wait_line = next(l for l in entrypoint.splitlines() if l.strip().startswith("wait -n"))
+    assert not wait_line.startswith(" "), "wait -n must run in the top-level shell"

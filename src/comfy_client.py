@@ -1,5 +1,11 @@
 """Thin client for the ComfyUI HTTP API running inside the worker.
 
+Named comfy_client, not comfy, and that matters: ComfyUI's own package is
+`comfy`, and anything of ours on sys.path called that shadows it. main.py's
+first line is `import comfy.options`, so the collision does not degrade —
+ComfyUI simply does not start, with a "'comfy' is not a package" that says
+nothing about where the other one came from.
+
 The worker boots ComfyUI on localhost and talks to it over HTTP rather than
 importing it: ComfyUI owns its own model cache and execution queue, and keeping
 it as a separate process is what lets a warm worker skip model loading entirely

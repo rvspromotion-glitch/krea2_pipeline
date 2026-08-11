@@ -36,7 +36,7 @@ from pathlib import Path
 
 import requests
 
-import comfy
+import comfy_client as comfy
 import graph as graph_mod
 
 logging.basicConfig(
