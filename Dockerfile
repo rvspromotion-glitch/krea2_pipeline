@@ -23,7 +23,15 @@
 
 ARG CUDA_VERSION=12.4.1
 ARG PYTHON_VERSION=3.10
-ARG TORCH_VERSION=2.4.1
+# All three pinned, as a set. torchvision and torchaudio are compiled against a
+# specific torch ABI, so pinning torch and letting the other two float resolves
+# them to whatever is newest and produces an image that installs cleanly and
+# then dies on `import torchaudio` with an undefined symbol. ComfyUI imports
+# torchaudio unconditionally (comfy/sd.py -> lightricks audio_vae), so that is
+# not a corner case — it is every job.
+ARG TORCH_VERSION=2.6.0
+ARG TORCHVISION_VERSION=0.21.0
+ARG TORCHAUDIO_VERSION=2.6.0
 ARG TORCH_INDEX=https://download.pytorch.org/whl/cu124
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -33,6 +41,8 @@ FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS builder
 
 ARG PYTHON_VERSION
 ARG TORCH_VERSION
+ARG TORCHVISION_VERSION
+ARG TORCHAUDIO_VERSION
 ARG TORCH_INDEX
 ARG COMFYUI_REF=master
 
@@ -51,8 +61,18 @@ RUN pip install --no-cache-dir --upgrade pip wheel setuptools
 
 # Torch first and alone: it is the single largest dependency and the one least
 # likely to change, so it earns its own layer.
+#
+# The import check is not ceremony. A mismatched trio installs without
+# complaint and only fails when something loads the shared library, which is
+# minutes later and several layers down — this puts the failure on the line
+# that caused it.
 RUN pip install --no-cache-dir --index-url ${TORCH_INDEX} \
-        torch==${TORCH_VERSION} torchvision torchaudio
+        torch==${TORCH_VERSION} \
+        torchvision==${TORCHVISION_VERSION} \
+        torchaudio==${TORCHAUDIO_VERSION} \
+ && python -c "import torch, torchvision, torchaudio; \
+print('torch', torch.__version__, '| torchvision', torchvision.__version__, \
+      '| torchaudio', torchaudio.__version__)"
 
 # These pins are not preferences. numpy 2 and mediapipe >0.10.14 both break the
 # node set at import; letting pip resolve them freely produces an image that

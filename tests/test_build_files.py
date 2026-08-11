@@ -128,6 +128,28 @@ def test_the_worker_fetches_models_before_starting_comfyui():
     assert entrypoint.index("fetch_models.sh") < entrypoint.index("python3 main.py")
 
 
+def test_torch_torchvision_and_torchaudio_are_pinned_together():
+    """Pinning torch alone is the trap that broke a build.
+
+    torchvision and torchaudio are compiled against a specific torch ABI. Pin
+    torch and let the other two float and pip installs the newest of each,
+    which import fine on their own and blow up with an undefined symbol the
+    moment the shared library loads. ComfyUI imports torchaudio unconditionally,
+    so that is every job, not a corner case.
+    """
+    install = re.search(r"pip install[^\n]*\$\{TORCH_INDEX\}(.*?)(?=\n[A-Z#]|\n\n)",
+                        DOCKERFILE, flags=re.S)
+    assert install, "could not find the torch install line"
+    for package in ("torch", "torchvision", "torchaudio"):
+        assert re.search(rf"\b{package}==\$\{{[A-Z_]+\}}", install.group(1)), \
+            f"{package} is not pinned in the torch install"
+
+
+def test_the_torch_install_is_import_checked():
+    """A mismatched trio installs silently; the failure must land on this line."""
+    assert "import torch, torchvision, torchaudio" in DOCKERFILE
+
+
 def test_the_runtime_stage_does_not_use_the_cuda_devel_image():
     """devel is ~5GB of toolchain that only the builder needs."""
     runtime = DOCKERFILE.split("AS runtime")[0].splitlines()[-1]
