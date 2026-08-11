@@ -1,2 +1,7 @@
 runpod>=1.6.0
 requests>=2.31.0
+
+# The cold-start model fetch. hf_transfer is the rust downloader — it saturates
+# the link, which is what keeps a multi-GB pull to minutes rather than tens.
+huggingface_hub>=0.24
+hf_transfer>=0.1.6

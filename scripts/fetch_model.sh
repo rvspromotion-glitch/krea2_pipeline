@@ -16,11 +16,19 @@ kind="${1:?hf|civit}"
 out="${!#}"
 mkdir -p "$(dirname "$out")"
 
-# SECRETS_DIR is overridable so this is testable off a real BuildKit mount; the
-# build never sets it.
+# Two callers, two ways of holding a token: at container start it is an ordinary
+# env var from the RunPod endpoint, and in a build it would be a BuildKit secret
+# file. Check the file first, fall back to the environment.
 read_secret() {
   local path="${SECRETS_DIR:-/run/secrets}/$1"
-  [ -f "$path" ] && tr -d '\r\n' < "$path" || true
+  if [ -f "$path" ]; then
+    tr -d '\r\n' < "$path"
+    return
+  fi
+  # civitai_token -> CIVITAI_TOKEN
+  local name
+  name=$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')
+  printf '%s' "$(eval "printf '%s' \"\${${name}:-}\"" | tr -d '\r\n')"
 }
 
 # A build that half-downloads a checkpoint must not produce a working image with
@@ -82,9 +90,10 @@ PY
     echo "[fetch] civitai $(basename "$out")"
     token="$(read_secret civitai_token)"
     if [ -z "$token" ]; then
-      echo "[fetch] ERROR: the civitai_token build secret is empty."
-      echo "        This file is gated. Add a CIVITAI_TOKEN repo secret"
-      echo "        (Settings -> Secrets and variables -> Actions)."
+      echo "[fetch] ERROR: no Civitai token. This file is gated."
+      echo "        Set CIVITAI_TOKEN as an environment variable on the RunPod"
+      echo "        endpoint (Settings -> Environment Variables). Get one from"
+      echo "        civitai.com -> Account settings -> API Keys."
       exit 1
     fi
 

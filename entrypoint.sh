@@ -10,6 +10,12 @@ if [ ! -f "${COMFY_DIR}/main.py" ]; then
   exit 1
 fi
 
+# Weights first, ComfyUI second. ComfyUI caches its model folder listing, and a
+# checkpoint that appears after boot is a validation error on the first job
+# rather than a load — not worth the ~60s of overlap this would buy on a run
+# that lasts hours. Fetching is skip-if-present, so a warm worker pays nothing.
+/app/scripts/fetch_models.sh
+
 # ComfyUI is started first and in the background, so it loads while RunPod is
 # still bringing the worker up. wait_until_ready in the handler covers the rest:
 # the first job blocks until ComfyUI answers instead of failing to connect.
