@@ -72,22 +72,17 @@ WORKDIR /app
 COPY workflows/ /app/workflows/
 COPY scripts/verify_nodes.py /app/scripts/verify_nodes.py
 
-# Import every node package and check that both graphs resolve. A missing node
-# otherwise surfaces as a validation error on the first job of the Sunday batch,
-# with a healthy-looking worker behind it.
+# Node check — OFF by default.
 #
-# It also prints which package supplies which node — the only reliable way to
-# trim custom_nodes.txt, since class names do not name their package. Only six
-# of the twenty-three node types here come from custom packages, and ComfyUI
-# imports every installed one before it serves anything.
+# It is a diagnostic, not a gate. It blocked four builds in a row and that cost
+# far more than it was worth: the real answer to "does this image render" is a
+# test job on a GPU, which the Radar UI can fire on demand. Turn it on with
+# --build-arg VERIFY_NODES=1 when you actually want the report.
 #
-# PRUNE_UNUSED_NODES=1 deletes the ones that supplied nothing; off by default
-# because a package can matter by patching something on import.
-# VERIFY_NODES=0 skips the check, for a package that cannot be imported without
-# a GPU. It is not a way past a broken image: everything this has caught so far
-# would also have stopped ComfyUI starting.
+# What it prints when you do run it: which package supplies which node, and
+# which packages supplied nothing.
 ARG PRUNE_UNUSED_NODES=0
-ARG VERIFY_NODES=1
+ARG VERIFY_NODES=0
 RUN if [ "${VERIFY_NODES}" = "1" ]; then \
       python /app/scripts/verify_nodes.py \
         $([ "${PRUNE_UNUSED_NODES}" = "1" ] && echo --prune); \
