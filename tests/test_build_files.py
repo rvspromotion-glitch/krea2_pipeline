@@ -128,39 +128,38 @@ def test_the_worker_fetches_models_before_starting_comfyui():
     assert entrypoint.index("fetch_models.sh") < entrypoint.index("python3 main.py")
 
 
-def test_torch_torchvision_and_torchaudio_are_pinned_together():
-    """Pinning torch alone is the trap that broke a build.
+def test_torch_is_not_reinstalled_over_the_base_image():
+    """The base image owns the torch stack. Do not touch it.
 
-    torchvision and torchaudio are compiled against a specific torch ABI. Pin
-    torch and let the other two float and pip installs the newest of each,
-    which import fine on their own and blow up with an undefined symbol the
-    moment the shared library loads. ComfyUI imports torchaudio unconditionally,
-    so that is every job, not a corner case.
+    This is the lesson from three consecutive failed builds. torch,
+    torchvision, torchaudio, CUDA, cuDNN and Triton all have to agree, and
+    assembling that set by hand here produced a different mismatch every time —
+    an ABI break in torchaudio, then a torch too old for ComfyUI's own imports.
+    The runpod/pytorch base ships a combination that already works, which the
+    detailer worker runs in production.
     """
-    install = re.search(r"pip install[^\n]*\$\{TORCH_INDEX\}(.*?)(?=\n[A-Z#]|\n\n)",
-                        DOCKERFILE, flags=re.S)
-    assert install, "could not find the torch install line"
-    for package in ("torch", "torchvision", "torchaudio"):
-        assert re.search(rf"\b{package}==\$\{{[A-Z_]+\}}", install.group(1)), \
-            f"{package} is not pinned in the torch install"
+    for line in DOCKERFILE.splitlines():
+        if not line.strip().startswith(("RUN pip install", "RUN pip3 install")):
+            continue
+        for package in ("torch", "torchvision", "torchaudio"):
+            assert not re.search(rf"(?<![\w-]){package}(==|\s|$)", line), \
+                f"installs {package} over the base image's: {line.strip()}"
 
 
-def test_the_torch_install_is_import_checked():
-    """A mismatched trio installs silently; the failure must land on this line."""
-    assert "import torch, torchvision, torchaudio" in DOCKERFILE
-
-
-def test_the_runtime_stage_does_not_use_the_cuda_devel_image():
-    """devel is ~5GB of toolchain that only the builder needs."""
-    runtime = DOCKERFILE.split("AS runtime")[0].splitlines()[-1]
-    assert "devel" not in runtime, f"runtime stage is on a devel base: {runtime}"
+def test_the_base_image_is_pinned():
+    """A floating base tag would put the whole stack back in motion."""
+    base = re.search(r"^FROM\s+(\S+)", DOCKERFILE, flags=re.M)
+    assert base, "no FROM line"
+    assert ":" in base.group(1), f"base image has no tag: {base.group(1)}"
+    assert not base.group(1).endswith((":latest", ":main")), \
+        f"base image tag is not fixed: {base.group(1)}"
 
 
 def test_application_code_is_copied_last():
     """Anything after a changed layer is rebuilt, so the files that change on
-    every commit have to sit below the venv and ComfyUI."""
+    every commit have to sit below ComfyUI and the node install."""
     src_at = DOCKERFILE.index("COPY src/")
-    for earlier in ("COPY --from=builder /opt/venv", "COPY --from=builder /comfyui"):
+    for earlier in ("git clone", "install_nodes.sh"):
         assert DOCKERFILE.index(earlier) < src_at, \
             f"{earlier!r} must come before COPY src/"
 

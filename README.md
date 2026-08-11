@@ -59,11 +59,17 @@ run concurrently, and a failed one stops the worker rather than letting ComfyUI
 start without a checkpoint and fail every job with an error that never mentions
 the download.
 
-The rest of the Dockerfile is still shaped for a small pull:
+**The base image owns the torch stack.** `runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel`
+is the same base the detailer worker runs in production with this node set.
+Nothing here pip-installs torch, torchvision or torchaudio on top of it, and a
+test enforces that — three builds died on hand-assembled combinations of those
+(an ABI break in torchaudio, then a torch too old for ComfyUI's own imports)
+before this was adopted, and none of them were ComfyUI's fault.
 
-- **Multi-stage.** The CUDA *devel* toolkit is needed to build a couple of
-  wheels and for nothing at runtime, so it stays in the builder. The runtime
-  stage is on `cuda:base` and gets its CUDA libraries from the torch wheels.
+ComfyUI is pinned to a release tag for the same reason: a moving ComfyUI under
+a fixed dependency set is two things in motion, and the collision surfaces as a
+traceback that points at neither.
+
 - **Application code last**, because everything below a changed layer is
   rebuilt — a code-only change re-pulls megabytes.
 - **Node set verified at build time** (below).
