@@ -90,6 +90,13 @@ Endpoint settings that matter:
 - Leave **FlashBoot** on. It is the only thing that makes a second cold start in
   the same batch cheap.
 
+### If a model download fails
+
+The build fails rather than shipping whatever came back — a 9KB HTML page saved
+as a checkpoint would otherwise become a cryptic load error on the Sunday batch.
+The error prints the HTTP status and the first 400 bytes of the actual response,
+which is normally enough to tell a rejected token from a dead URL.
+
 ### If the build runs out of disk
 
 A hosted GitHub runner has ~14GB free on `/` and a large, empty `/mnt`. The

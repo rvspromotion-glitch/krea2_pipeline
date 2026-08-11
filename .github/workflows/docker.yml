@@ -16,6 +16,23 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # Cheap, and it saves finding out from a failed download several minutes
+      # in. Only presence is checked — whether the token actually works is the
+      # download's business.
+      - name: Check the secrets this build needs
+        run: |
+          missing=""
+          [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] || missing="$missing DOCKERHUB_USERNAME"
+          [ -n "${{ secrets.DOCKERHUB_TOKEN }}"    ] || missing="$missing DOCKERHUB_TOKEN"
+          [ -n "${{ secrets.CIVITAI_TOKEN }}"      ] || missing="$missing CIVITAI_TOKEN"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repo secret(s):$missing"
+            echo "Add them under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          # HF_TOKEN is only needed if one of the Hugging Face repos goes gated.
+          [ -n "${{ secrets.HF_TOKEN }}" ] || echo "::notice::HF_TOKEN is not set — fine while the HF models stay public."
+
       # This image carries ~18GB of models plus torch. A hosted runner has about
       # 14GB free on / and a much larger, near-empty /mnt, so the build needs
       # both: delete what we do not use, and move Docker's storage to /mnt.
