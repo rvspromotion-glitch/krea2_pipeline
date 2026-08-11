@@ -1,17 +1,17 @@
 """RunPod serverless handler for the Krea2 pipeline.
 
 One endpoint serves both workflows. They share every model — same checkpoint,
-CLIP, VAE and LoRAs — so a second endpoint would mean a second copy of ~40GB and
-a second cold start for no benefit. Routing both job types here also keeps the
-worker warm across a mixed batch, which is where the real time saving is.
+CLIP, VAE and LoRAs — so a second endpoint would mean a second copy of the image
+and a second cold start for no benefit. Routing both job types here also keeps
+the worker warm across a mixed batch, which is where the real time saving is.
 
 Job input
 ---------
     mode            "single" | "carousel"
     image_url       reference photo, fetched over HTTP
     image_b64       ...or inline base64 (image_url wins if both are given)
-    lora_name       character LoRA filename, already on the volume
-    lora_url        ...or a URL to fetch it from, if not present yet
+    lora_name       character LoRA filename
+    lora_url        where to fetch it from if it is not already present
     trigger_word    e.g. "3lm1ra"
     description     e.g. "young woman with long platinum blonde hair"
     gemini_api_key  from Radar's settings; never baked into the graph
@@ -45,7 +45,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("handler")
 
-LORA_DIR = Path(os.getenv("LORA_DIR", "/runpod-volume/ComfyUI/models/loras"))
+LORA_DIR = Path(os.getenv("LORA_DIR", "/comfyui/models/loras"))
 FETCH_TIMEOUT = 180
 
 # A carousel legitimately runs ten minutes; a single, two or three. One ceiling
@@ -86,11 +86,17 @@ def _fetch_reference(payload: dict) -> bytes:
 
 
 def _ensure_lora(payload: dict) -> str:
-    """Make sure the character LoRA is on the volume; return its filename.
+    """Make sure the character LoRA is present; return its filename.
 
-    Persona LoRAs are per-character and change rarely, so they live on the
-    network volume. lora_url is the escape hatch for a persona whose LoRA has
-    not been seeded there yet — fetched once, then resident like the rest.
+    The shared models are baked into the image, but character LoRAs are not:
+    they are per-persona, they change when a persona is retrained, and baking
+    them would mean rebuilding and re-pushing an 18GB image to add one. Radar
+    hosts them instead and sends a URL.
+
+    So this normally fetches, once per cold start, into the container's own
+    filesystem — a few hundred MB against a weekly batch, and it means adding a
+    persona is an upload rather than a rebuild. A LoRA that *was* baked in (or
+    fetched earlier in this batch) is used as-is.
     """
     name = _require(payload, "lora_name")
     if "/" in name or "\\" in name:
@@ -103,7 +109,7 @@ def _ensure_lora(payload: dict) -> str:
     url = (payload.get("lora_url") or "").strip()
     if not url:
         raise JobError(
-            f"LoRA {name!r} is not on the volume and no lora_url was supplied"
+            f"LoRA {name!r} is not in the image and no lora_url was supplied"
         )
 
     log.info("fetching character LoRA %s", name)

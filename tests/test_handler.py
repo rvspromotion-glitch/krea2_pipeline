@@ -129,7 +129,7 @@ def test_bad_mode_is_rejected(stub):
 def test_a_missing_lora_without_a_url_is_an_input_error(stub):
     out = handler_mod.handler(job(lora_name="NotThere.safetensors"))
     assert out["kind"] == "input"
-    assert "not on the volume" in out["error"]
+    assert "not in the image" in out["error"]
 
 
 def test_lora_name_cannot_escape_the_lora_dir(stub):

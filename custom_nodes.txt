@@ -1,0 +1,32 @@
+# Custom node packages, installed at build time.  name  owner/repo  ref
+#
+# Refs are `HEAD` for now. Pin them to commit shas once a build is green: these
+# are third-party repos that can change under you, and "the Sunday render broke
+# and nothing in this repo changed" is a bad Monday.
+#
+# Only six of the twenty-three node types in the two graphs come from here; the
+# rest are core ComfyUI. verify_nodes.py prints, on every build, which package
+# supplied which node and which packages supplied nothing — trim this list from
+# that output rather than from guesswork, and the build will fail loudly if you
+# take out one that was needed.
+#
+# Known-required (they provide nodes the graphs reference):
+BatchnodeI9                 rvspromotion-glitch/BatchnodeI9         HEAD
+ComfyUI-KJNodes             kijai/ComfyUI-KJNodes                   HEAD
+ComfyUI-Impact-Pack         ltdrdata/ComfyUI-Impact-Pack            HEAD
+comfyui-krea2edit           lbouaraba/comfyui-krea2edit             HEAD
+
+# Carried from the pod the workflows were authored on. One of these supplies
+# MoreJPEG; the rest are almost certainly dead weight on these two graphs.
+rgthree-comfy               rgthree/rgthree-comfy                   HEAD
+ComfyUI-Easy-Use            yolain/ComfyUI-Easy-Use                 HEAD
+ComfyUI_LayerStyle          chflame163/ComfyUI_LayerStyle           HEAD
+ComfyUI-DepthAnythingV2     kijai/ComfyUI-DepthAnythingV2           HEAD
+comfyui-krea2-conditioning  huwhitememes/comfyui-krea2-conditioning HEAD
+ComfyUI-NovaNoiser          Aloukik21/ComfyUI-NovaNoiser            HEAD
+krea-reference              kgilper/krea-reference                  HEAD
+ComfyUI-Anima-PiD           sorryhyun/ComfyUI-Anima-PiD             HEAD
+comfyui-realisim-enhancor   amrnidal999-tech/comfyui-realisim-enhancor HEAD
+ComfyUI-GridSplit           workordie/ComfyUI-GridSplit             b9941964ff879487aa3e9433b174548039748453
+savezipi9                   rvspromotion-glitch/savezipi9           HEAD
+RES4LYF                     ClownsharkBatwing/RES4LYF               HEAD

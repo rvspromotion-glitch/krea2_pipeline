@@ -3,7 +3,8 @@
 The worker boots ComfyUI on localhost and talks to it over HTTP rather than
 importing it: ComfyUI owns its own model cache and execution queue, and keeping
 it as a separate process is what lets a warm worker skip model loading entirely
-between jobs. That is the whole point of the network volume.
+between jobs. Across a sequential weekly batch that is most of the saving: the
+models are loaded once for forty-odd jobs, not once per job.
 
 Progress is tracked by polling /history rather than the websocket. The websocket
 gives finer-grained progress, but it also drops silently on long jobs and then
@@ -43,7 +44,12 @@ class ComfyTimeout(ComfyError):
 
 
 def wait_until_ready(timeout: int = 600) -> None:
-    """Block until ComfyUI answers. Cold start loads several GB off the volume."""
+    """Block until ComfyUI answers.
+
+    Generous, because this covers a cold start: ComfyUI imports every custom
+    node package before it serves anything, and RunPod can hand the handler a
+    job before that finishes.
+    """
     deadline = time.time() + timeout
     last = ""
     while time.time() < deadline:
