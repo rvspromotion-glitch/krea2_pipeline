@@ -1,8 +1,6 @@
-# The image carries the handler and the graphs, nothing else. Models live on
-# the network volume; tests and git history have no business in a build that
-# gets pulled on every cold start.
-# setup_volume.sh is NOT ignored — the Dockerfile copies it so the same image
-# can seed an empty volume with RUN_SETUP=1.
+# The build needs the handler, the graphs, and the lists that drive the model
+# and node installs. Nothing else — git history and tests have no business in
+# an image that gets pulled on every cold start.
 .git
 .github
 tests/

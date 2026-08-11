@@ -1,0 +1,18 @@
+# Hard requirements of the node set, not preferences.
+#
+# numpy 2 and mediapipe above 0.10.14 both break LayerStyle and Impact-Pack at
+# import time. Letting pip resolve these freely yields an image that builds
+# clean and then fails on the first render, which is the expensive place to
+# find out. Applied as a pip constraint file across every install in the build,
+# so a node package's own requirements.txt cannot walk them back.
+numpy<2
+protobuf<5
+opencv-python<4.12
+transformers>=4.39.3
+mediapipe==0.10.14
+
+# PathchSageAttentionKJ is in both graphs, so this is load-bearing rather than
+# an optimisation. v1 is Triton-based and installs as a wheel; if a future
+# version needs nvcc, the builder stage has it and the runtime stage still will
+# not have to.
+sageattention

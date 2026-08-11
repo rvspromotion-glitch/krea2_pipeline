@@ -8,20 +8,37 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # Models are downloaded and layers are pushed inside this job; a cold build
+    # is comfortably over an hour.
+    timeout-minutes: 300
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # The CUDA devel base is tens of GB unpacked and a hosted runner only has
-      # ~14GB free. Dropping the preinstalled toolchains we do not use buys back
-      # enough room; without this the build dies on "no space left on device"
-      # partway through pulling the base layer.
-      - name: Free up disk space
+      # This image carries ~18GB of models plus torch. A hosted runner has about
+      # 14GB free on / and a much larger, near-empty /mnt, so the build needs
+      # both: delete what we do not use, and move Docker's storage to /mnt.
+      # Without this the build dies on "no space left on device" somewhere in
+      # the middle of the checkpoint download, which looks like a network fault.
+      - name: Make room for the build
         run: |
+          echo "── before ──"; df -h / /mnt
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
-          df -h /
+                      /usr/local/share/boost /usr/local/share/powershell \
+                      /usr/local/lib/node_modules /opt/hostedtoolcache \
+                      "$AGENT_TOOLSDIRECTORY" || true
+          sudo docker image prune -af || true
+
+          # docker.socket restarts the daemon on demand, so it has to go down
+          # too or the config change is reverted out from under us.
+          sudo systemctl stop docker docker.socket
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root":"/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+          docker info --format 'docker root: {{.DockerRootDir}}'
+
+          echo "── after ──"; df -h / /mnt
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -33,10 +50,16 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push worker
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
+          platforms: linux/amd64
+          # Model-host tokens, never build args: an ARG is recorded in the layer
+          # history of the stage that declares it.
+          secrets: |
+            civitai_token=${{ secrets.CIVITAI_TOKEN }}
+            hf_token=${{ secrets.HF_TOKEN }}
           # The commit tag is the one that matters. RunPod caches by tag, so an
           # endpoint pinned to :latest can keep serving a stale image after a
           # push — point the endpoint at a specific sha instead, and rolling
@@ -44,8 +67,13 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/krea2-worker:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/krea2-worker:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Registry cache, not type=gha: the GitHub Actions cache is capped at
+          # 10GB per repository, so caching an 18GB image there would thrash and
+          # evict itself on every run while still uploading the whole thing.
+          # A dedicated Docker Hub tag holds it instead, which is what turns a
+          # code-only change into a few-minute build.
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/krea2-worker:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/krea2-worker:buildcache,mode=max
 
       - name: Image pushed
         run: |
