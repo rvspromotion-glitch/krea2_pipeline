@@ -20,9 +20,13 @@ fi
 
 export PYTHONPATH="/app/src:${PYTHONPATH:-}"
 
+# --disable-metadata is not optional here. SaveImage otherwise writes the whole
+# API prompt into the PNG's tEXt chunks — which includes the Ask_Gemini_Batch
+# node, and therefore the Gemini API key in plaintext, plus the character LoRA
+# filename and the full system prompt. Those images get published.
 echo "[entrypoint] starting ComfyUI from ${COMFY_DIR}"
 cd "${COMFY_DIR}"
-python3 main.py --listen 127.0.0.1 --port 8188 --disable-auto-launch &
+python3 main.py --listen 127.0.0.1 --port 8188 --disable-auto-launch --disable-metadata &
 COMFY_PID=$!
 
 # If ComfyUI dies the worker is useless — take the container down so RunPod
