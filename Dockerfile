@@ -6,18 +6,20 @@
 # it, which is what was starving this of GPUs; the workload is a weekly
 # sequential batch, so paying a cold start once a week is the cheaper trade.
 #
-# Everything below exists to make that cold start as small as possible:
+# The weights are not in the image either. ~18GB of models on top of torch does
+# not build on a hosted GitHub runner — it has ~14GB free on / and a build needs
+# room for the layers twice over. So the image carries ComfyUI, the custom nodes
+# and the code (~8GB), and entrypoint.sh fetches the weights on cold start,
+# skipping anything already there. See models.txt.
+#
+# What is left is still shaped for a small pull:
 #
 #   * Multi-stage. The CUDA *devel* toolkit (~5GB of nvcc, headers and static
 #     libs) is needed to build a couple of wheels and for nothing at runtime, so
 #     it stays in the builder and never ships.
-#   * One layer per model. Layers are pulled and cached individually, so a code
-#     change re-pulls a few MB rather than 18GB, and swapping one LoRA does not
-#     invalidate the checkpoint.
 #   * Application code last. Anything after a changed layer is rebuilt, so the
-#     files that change every commit sit at the very end.
-#
-# Rebuilding after a code-only change touches the final three layers.
+#     files that change every commit sit at the very end and a code-only change
+#     re-pulls megabytes.
 
 ARG CUDA_VERSION=12.4.1
 ARG PYTHON_VERSION=3.10
@@ -80,49 +82,6 @@ RUN pip install --no-cache-dir -r /build/requirements.txt
 RUN python -m compileall -q /opt/venv/lib /comfyui || true
 
 # ═══════════════════════════════════════════════════════════════════════════
-# models — downloaded once, copied out one file at a time
-# ═══════════════════════════════════════════════════════════════════════════
-FROM ubuntu:22.04 AS models
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl ca-certificates python3-pip \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir "huggingface_hub" "hf_transfer"
-
-COPY scripts/fetch_model.sh /build/fetch_model.sh
-RUN chmod +x /build/fetch_model.sh
-
-# Tokens arrive as BuildKit secrets, which are mounted for the life of the RUN
-# and never written to a layer. A build ARG would be visible in this stage's
-# history for anyone who pulls it.
-#
-# Only what these two graphs load. The UNETLoader that pulled krea2_raw was
-# pruned as dead, so the AiO checkpoint does that work alone. Largest first —
-# it is the least likely to change, and layers below a changed one are rebuilt.
-RUN --mount=type=secret,id=civitai_token \
-    /build/fetch_model.sh civit \
-      "https://civitai.red/api/download/models/3107962?fileId=2996137" \
-      /models/checkpoints/AiO_krea2_checkpoint_int8_8steps.safetensors
-RUN --mount=type=secret,id=hf_token \
-    /build/fetch_model.sh hf "Comfy-Org/Krea-2" \
-      "text_encoders/qwen3vl_4b_fp8_scaled.safetensors" \
-      /models/clip/qwen3vl_4b_fp8_scaled.safetensors
-RUN --mount=type=secret,id=hf_token \
-    /build/fetch_model.sh hf "Kijai/WanVideo_comfy" \
-      "Wan2_1_VAE_fp32.safetensors" \
-      /models/vae/Wan2_1_VAE_fp32.safetensors
-RUN --mount=type=secret,id=hf_token \
-    /build/fetch_model.sh hf "conradlocke/krea2-identity-edit" \
-      "krea2_identity_edit_v1_2.safetensors" \
-      /models/loras/krea2_identity_edit_v1_2.safetensors
-RUN --mount=type=secret,id=civitai_token \
-    /build/fetch_model.sh civit \
-      "https://civitai.red/api/download/models/3075606?fileId=2954661" \
-      /models/loras/Lenovo_ultrareal.safetensors
-
-# ═══════════════════════════════════════════════════════════════════════════
 # runtime — CUDA *base*, not devel. Torch's wheels bring their own CUDA libs.
 # ═══════════════════════════════════════════════════════════════════════════
 FROM nvidia/cuda:${CUDA_VERSION}-base-ubuntu22.04 AS runtime
@@ -134,17 +93,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH=/opt/venv/bin:$PATH \
     COMFYUI_PATH=/comfyui \
+    MODELS_DIR=/comfyui/models \
     LORA_DIR=/comfyui/models/loras \
     PYTHONPATH=/app/src \
     # These graphs run several samplers back to back at a fixed resolution,
     # which fragments the caching allocator enough to OOM a 24GB card partway
     # through a carousel even though no single step is close to the limit.
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
-    # Every model these graphs need is in the image. A node reaching for the Hub
-    # at render time means something is missing, and the whole point of baking
-    # the models in is that a cold start does not download gigabytes — so fail
-    # loudly here rather than quietly paying for it on every job.
-    HF_HUB_OFFLINE=1
+    # The rust downloader, for the multi-GB weights fetched on cold start.
+    HF_HUB_ENABLE_HF_TRANSFER=1
 
 # libgl1 and libglib are opencv's; libgomp is torch's. Nothing else is needed —
 # the CUDA runtime arrives with the torch wheels.
@@ -155,13 +112,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /comfyui  /comfyui
-
-# One COPY per model = one layer per model.
-COPY --from=models /models/checkpoints/AiO_krea2_checkpoint_int8_8steps.safetensors /comfyui/models/checkpoints/
-COPY --from=models /models/clip/qwen3vl_4b_fp8_scaled.safetensors                   /comfyui/models/clip/
-COPY --from=models /models/vae/Wan2_1_VAE_fp32.safetensors                          /comfyui/models/vae/
-COPY --from=models /models/loras/krea2_identity_edit_v1_2.safetensors               /comfyui/models/loras/
-COPY --from=models /models/loras/Lenovo_ultrareal.safetensors                       /comfyui/models/loras/
 
 WORKDIR /app
 COPY workflows/ /app/workflows/
@@ -177,8 +127,10 @@ RUN python /app/scripts/verify_nodes.py \
       $([ "${PRUNE_UNUSED_NODES}" = "1" ] && echo --prune)
 
 # Last, so a code change rebuilds and re-pulls only these.
+COPY models.txt /app/models.txt
+COPY scripts/fetch_model.sh scripts/fetch_models.sh /app/scripts/
 COPY src/ /app/src/
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh /app/scripts/fetch_model.sh /app/scripts/fetch_models.sh
 
 CMD ["/app/entrypoint.sh"]

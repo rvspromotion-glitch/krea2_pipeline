@@ -1,0 +1,21 @@
+# Shared models, fetched at container start. One per line:
+#
+#   hf     <repo>  <path-in-repo>       <dest under MODELS_DIR>
+#   civit  <url>                        <dest under MODELS_DIR>
+#
+# Only what the two graphs actually load. The UNETLoader that pulled krea2_raw
+# was removed as dead, so the AiO checkpoint does that work alone.
+#
+# These are NOT baked into the image. ~18GB of models plus torch does not build
+# on a hosted GitHub runner, so the image carries ComfyUI and the code and the
+# worker fetches the weights on cold start. Skip-if-present, so a warm worker
+# and a restarted container pay nothing.
+#
+# Destination filenames are what the graphs reference — renaming one here
+# without renaming it in workflows/*.json breaks the render, not the download.
+
+civit  https://civitai.red/api/download/models/3107962?fileId=2996137  checkpoints/AiO_krea2_checkpoint_int8_8steps.safetensors
+hf     Comfy-Org/Krea-2  text_encoders/qwen3vl_4b_fp8_scaled.safetensors  clip/qwen3vl_4b_fp8_scaled.safetensors
+hf     Kijai/WanVideo_comfy  Wan2_1_VAE_fp32.safetensors  vae/Wan2_1_VAE_fp32.safetensors
+hf     conradlocke/krea2-identity-edit  krea2_identity_edit_v1_2.safetensors  loras/krea2_identity_edit_v1_2.safetensors
+civit  https://civitai.red/api/download/models/3075606?fileId=2954661  loras/Lenovo_ultrareal.safetensors

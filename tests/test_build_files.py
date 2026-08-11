@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
+WORKFLOWS = REPO / "workflows"
 DOCKERFILE = (REPO / "Dockerfile").read_text()
 DOCKERIGNORE = [l.strip() for l in (REPO / ".dockerignore").read_text().splitlines()
                 if l.strip() and not l.startswith("#")]
@@ -59,22 +60,72 @@ def test_args_used_in_a_stage_are_declared_in_that_stage():
                 f"stage {name!r} uses ${{{var}}} but does not re-declare ARG {var}"
 
 
-def test_models_land_where_the_dockerfile_copies_them_from():
-    """The fetch RUNs and the COPY --from=models lines must agree on paths."""
-    fetched = set(re.findall(r"(/models/\S+\.safetensors)", DOCKERFILE))
-    copied = set(re.findall(r"COPY --from=models\s+(/models/\S+\.safetensors)", DOCKERFILE))
-    assert fetched, "no models are fetched — did the stage get renamed?"
-    assert fetched == copied, (
-        f"fetched but never copied: {sorted(fetched - copied)}; "
-        f"copied but never fetched: {sorted(copied - fetched)}")
+def _model_list() -> list[tuple[str, str]]:
+    """(kind, destination) for each row of models.txt."""
+    rows = []
+    for number, line in enumerate((REPO / "models.txt").read_text().splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        expected = {"hf": 4, "civit": 3}.get(parts[0])
+        assert expected, f"models.txt:{number} unknown kind {parts[0]!r}"
+        assert len(parts) == expected, f"models.txt:{number} wrong field count: {line}"
+        rows.append((parts[0], parts[-1]))
+    return rows
 
 
-def test_each_model_gets_its_own_layer():
-    """One COPY per model is the whole cold-start argument; a single COPY of a
-    directory would make one changed LoRA re-pull every checkpoint."""
-    copies = re.findall(r"^COPY --from=models .*$", DOCKERFILE, flags=re.M)
-    for line in copies:
-        assert line.count(".safetensors") == 1, f"more than one model in: {line}"
+def test_the_model_list_is_well_formed():
+    rows = _model_list()
+    assert rows, "models.txt is empty — the worker would start with no weights"
+    destinations = [dest for _, dest in rows]
+    assert len(destinations) == len(set(destinations)), "duplicate destination"
+    for _, dest in rows:
+        assert not dest.startswith("/"), f"{dest} must be relative to MODELS_DIR"
+        assert dest.endswith(".safetensors"), dest
+
+
+def test_every_model_the_graphs_load_is_in_the_model_list():
+    """A rename on either side is a render failure, not a download failure.
+
+    ComfyUI resolves these by filename, so a model fetched to a different name
+    than the graph asks for downloads perfectly and then fails validation on the
+    first job of the batch.
+    """
+    import json
+
+    referenced = set()
+    for path in WORKFLOWS.glob("*.json"):
+        for node in json.loads(path.read_text()).values():
+            for key, value in (node.get("inputs") or {}).items():
+                if isinstance(value, str) and value.endswith(".safetensors"):
+                    referenced.add(value)
+
+    fetched = {Path(dest).name for _, dest in _model_list()}
+    # The character LoRA is per-persona: patched into the graph per job and
+    # fetched from Radar via lora_url, so it is deliberately not in models.txt.
+    character_lora = referenced - fetched
+    assert len(character_lora) == 1, (
+        f"expected exactly one per-job LoRA slot, got {sorted(character_lora)} — "
+        f"models.txt covers {sorted(fetched)}")
+
+    from_graph = REPO / "src" / "graph.py"
+    assert "TITLE_CHARACTER_LORA" in from_graph.read_text(), \
+        "the per-job LoRA is patched by title; that lookup must still exist"
+
+
+def test_the_image_does_not_bake_the_weights_in():
+    """~18GB of models on top of torch does not build on a hosted runner."""
+    assert "--from=models" not in DOCKERFILE
+    assert "fetch_model.sh civit" not in DOCKERFILE, \
+        "models are fetched at container start, not at build time"
+
+
+def test_the_worker_fetches_models_before_starting_comfyui():
+    """ComfyUI caches its model folder listing at boot."""
+    entrypoint = (REPO / "entrypoint.sh").read_text()
+    assert "fetch_models.sh" in entrypoint
+    assert entrypoint.index("fetch_models.sh") < entrypoint.index("python3 main.py")
 
 
 def test_the_runtime_stage_does_not_use_the_cuda_devel_image():
@@ -85,9 +136,9 @@ def test_the_runtime_stage_does_not_use_the_cuda_devel_image():
 
 def test_application_code_is_copied_last():
     """Anything after a changed layer is rebuilt, so the files that change on
-    every commit have to sit below the models and the venv."""
+    every commit have to sit below the venv and ComfyUI."""
     src_at = DOCKERFILE.index("COPY src/")
-    for earlier in ("COPY --from=builder /opt/venv", "COPY --from=models"):
+    for earlier in ("COPY --from=builder /opt/venv", "COPY --from=builder /comfyui"):
         assert DOCKERFILE.index(earlier) < src_at, \
             f"{earlier!r} must come before COPY src/"
 

@@ -40,27 +40,43 @@ nothing, and routing both here keeps the worker warm across a mixed batch.
 Failures return `{"error": "...", "kind": "input" | "render" | "timeout"}` — the
 worker never crashes on a bad job.
 
-## No network volume
+## Where the models live
 
-Models are baked into the image. A network volume pins the endpoint to the one
-datacentre that holds it, which starves it of GPUs; this workload is a weekly
-sequential batch, so paying a cold start once a week is the cheaper trade.
+**No network volume.** A volume pins the endpoint to the one datacentre that
+holds it, which starves it of GPUs. This workload is a weekly sequential batch,
+so paying a cold start once a week is the cheaper trade.
 
-Everything in the Dockerfile follows from that:
+**Not in the image either.** ~18GB of weights on top of torch does not build on
+a hosted GitHub runner — it has ~14GB free on `/`, and a build needs room for
+the layers twice over. So the image is ComfyUI, the custom nodes and the code
+(~8GB), and `entrypoint.sh` fetches the weights on cold start from
+[`models.txt`](models.txt) before starting ComfyUI.
+
+That costs one download per cold start, which for this workload is one download
+per weekly batch: the run is forty-odd jobs back to back on a worker that stays
+warm, against three to four hours of rendering. Fetches are skip-if-present and
+run concurrently, and a failed one stops the worker rather than letting ComfyUI
+start without a checkpoint and fail every job with an error that never mentions
+the download.
+
+The rest of the Dockerfile is still shaped for a small pull:
 
 - **Multi-stage.** The CUDA *devel* toolkit is needed to build a couple of
   wheels and for nothing at runtime, so it stays in the builder. The runtime
   stage is on `cuda:base` and gets its CUDA libraries from the torch wheels.
-- **One layer per model.** Layers are pulled and cached individually, so a code
-  change re-pulls a few MB rather than 18GB, and swapping a LoRA does not
-  invalidate the checkpoint.
-- **Application code last**, because everything below a changed layer is rebuilt.
+- **Application code last**, because everything below a changed layer is
+  rebuilt — a code-only change re-pulls megabytes.
 - **Node set verified at build time** (below).
 
-Character LoRAs are deliberately *not* baked in: they are per-persona and change
-when a persona is retrained, and adding one should not mean rebuilding an 18GB
-image. Radar hosts them and sends `lora_url`; the worker fetches once per cold
-start. That is a few hundred MB against a weekly batch.
+Character LoRAs are not in `models.txt`: they are per-persona and change when a
+persona is retrained. Radar hosts them and sends `lora_url` per job.
+
+### Adding or changing a model
+
+Edit `models.txt`. The destination filename is what the graph references, so
+renaming one there without renaming it in `workflows/*.json` gives you a clean
+download and a validation error on the first job — there is a test for exactly
+that.
 
 ## Deploy
 
@@ -71,8 +87,15 @@ Pushing to `main` builds and pushes the image. Repo secrets
 |---|---|
 | `DOCKERHUB_USERNAME` | your Docker Hub username |
 | `DOCKERHUB_TOKEN` | an access token, **not** your password |
-| `CIVITAI_TOKEN` | Civitai API token — the checkpoint and one LoRA are gated |
-| `HF_TOKEN` | only if a Hugging Face repo above becomes gated |
+
+The model-host tokens are **not** build secrets — the weights are fetched by the
+worker, so they go on the RunPod endpoint instead
+(Settings → Environment Variables):
+
+| endpoint variable | value |
+|---|---|
+| `CIVITAI_TOKEN` | required — the checkpoint and one LoRA are gated |
+| `HF_TOKEN` | only if a Hugging Face repo goes gated |
 
 Each build publishes `krea2-worker:latest` and `krea2-worker:<commit-sha>`.
 
@@ -86,17 +109,29 @@ Endpoint settings that matter:
 
 - **Execution timeout above 10 minutes.** Carousels legitimately take 5–10, and
   RunPod otherwise kills the job before the handler ever reports.
-- **Container disk ≥ 30GB**, or the image will not unpack.
-- Leave **FlashBoot** on. It is the only thing that makes a second cold start in
-  the same batch cheap.
+- **Container disk ≥ 40GB** — ~8GB of image plus ~18GB of weights, with room to
+  work.
+- **`CIVITAI_TOKEN`** as an environment variable, or the worker stops on start
+  and says so.
+- Leave **FlashBoot** on. It is what keeps a second cold start in the same batch
+  cheap.
 
-### If the build runs out of disk
+### If a model download fails
 
-A hosted GitHub runner has ~14GB free on `/` and a large, empty `/mnt`. The
-workflow deletes the preinstalled toolchains and moves Docker's storage to
-`/mnt` before building, which is enough today — but the image is ~26GB unpacked
-and that margin is not huge. If a build dies on "no space left on device", the
-fix is a larger runner rather than more pruning.
+The worker stops instead of starting ComfyUI without its weights. The log names
+the model, the HTTP status and the first 400 bytes of what the server actually
+sent, which is normally enough to tell a rejected token from a dead URL:
+
+```
+[models] FAILED: AiO_krea2_checkpoint_int8_8steps.safetensors
+[models]   [fetch] ERROR: ... is not a model.
+[models]           HTTP status : 401
+[models]           | {"error":"Unauthorized","message":"The creator of this asset..."}
+[models]           -> the token was rejected. Check CIVITAI_TOKEN ...
+```
+
+Anything already downloaded is kept, so a restart resumes rather than starting
+over.
 
 ## Build-time node verification
 
@@ -163,10 +198,11 @@ context excludes only says so forty minutes into CI.
 
 ```
 workflows/         the two API graphs, cleaned and templated
+models.txt         weights to fetch on cold start, as data
 custom_nodes.txt   node packages to install, as data
 constraints.txt    pins the node set actually requires
 src/graph.py       loads a graph, patches in the per-job variables
 src/comfy.py       ComfyUI HTTP client (submit, poll, collect)
 src/handler.py     RunPod entry point
-scripts/           build steps: fetch models, install nodes, verify nodes
+scripts/           install_nodes + verify_nodes (build), fetch_model(s) (start)
 ```

@@ -8,19 +8,31 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    # Models are downloaded and layers are pushed inside this job; a cold build
-    # is comfortably over an hour.
-    timeout-minutes: 300
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # This image carries ~18GB of models plus torch. A hosted runner has about
-      # 14GB free on / and a much larger, near-empty /mnt, so the build needs
-      # both: delete what we do not use, and move Docker's storage to /mnt.
-      # Without this the build dies on "no space left on device" somewhere in
-      # the middle of the checkpoint download, which looks like a network fault.
+      # Cheap, and it saves finding out from a failed push at the end of a long
+      # build. Model-host tokens are not needed here — the weights are fetched
+      # by the worker at container start, not baked in.
+      - name: Check the secrets this build needs
+        run: |
+          missing=""
+          [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] || missing="$missing DOCKERHUB_USERNAME"
+          [ -n "${{ secrets.DOCKERHUB_TOKEN }}"    ] || missing="$missing DOCKERHUB_TOKEN"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repo secret(s):$missing"
+            echo "Add them under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+      # The image is ~8GB: torch, ComfyUI and the custom nodes. That does not
+      # fit in the ~14GB free on / alongside the build cache, but /mnt is large
+      # and near-empty, so Docker's storage moves there. (The models used to be
+      # baked in too, at ~18GB more — that is what did not fit at all, and is
+      # why they are fetched at container start instead.)
       - name: Make room for the build
         run: |
           echo "── before ──"; df -h / /mnt
@@ -55,11 +67,6 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
-          # Model-host tokens, never build args: an ARG is recorded in the layer
-          # history of the stage that declares it.
-          secrets: |
-            civitai_token=${{ secrets.CIVITAI_TOKEN }}
-            hf_token=${{ secrets.HF_TOKEN }}
           # The commit tag is the one that matters. RunPod caches by tag, so an
           # endpoint pinned to :latest can keep serving a stale image after a
           # push — point the endpoint at a specific sha instead, and rolling
@@ -68,8 +75,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/krea2-worker:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/krea2-worker:${{ github.sha }}
           # Registry cache, not type=gha: the GitHub Actions cache is capped at
-          # 10GB per repository, so caching an 18GB image there would thrash and
-          # evict itself on every run while still uploading the whole thing.
+          # 10GB per repository, and the torch layer alone is most of that.
           # A dedicated Docker Hub tag holds it instead, which is what turns a
           # code-only change into a few-minute build.
           cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/krea2-worker:buildcache
@@ -79,3 +85,6 @@ jobs:
         run: |
           echo "Deploy this tag on the RunPod endpoint:"
           echo "  ${{ secrets.DOCKERHUB_USERNAME }}/krea2-worker:${{ github.sha }}"
+          echo
+          echo "The endpoint needs CIVITAI_TOKEN set as an environment variable —"
+          echo "the worker fetches the weights on cold start, not at build time."
