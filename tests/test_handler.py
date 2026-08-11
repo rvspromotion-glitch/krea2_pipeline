@@ -13,7 +13,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-import comfy  # noqa: E402
+import comfy_client as comfy  # noqa: E402
 import handler as handler_mod  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"fake"

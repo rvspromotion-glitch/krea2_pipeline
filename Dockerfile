@@ -27,7 +27,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     COMFYUI_PATH=/comfyui \
     MODELS_DIR=/comfyui/models \
     LORA_DIR=/comfyui/models/loras \
-    PYTHONPATH=/app/src \
     # These graphs run several samplers back to back at a fixed resolution,
     # which fragments the caching allocator enough to OOM a 24GB card partway
     # through a carousel even though no single step is close to the limit.
@@ -93,6 +92,9 @@ RUN if [ "${VERIFY_NODES}" = "1" ]; then \
 # Last, so a code change rebuilds and re-pulls only these layers.
 COPY models.txt /app/models.txt
 COPY scripts/fetch_model.sh scripts/fetch_models.sh /app/scripts/
+# NOT on PYTHONPATH globally. ComfyUI imports its own top-level modules by bare
+# name, so ours sharing a name with one of its (src/comfy.py vs its `comfy`
+# package) stops it starting. entrypoint.sh sets the path for the handler only.
 COPY src/ /app/src/
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh /app/scripts/fetch_model.sh /app/scripts/fetch_models.sh
