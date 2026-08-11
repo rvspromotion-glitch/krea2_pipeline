@@ -108,6 +108,23 @@ PY
     # It also bought nothing. curl already drops the Authorization header on a
     # cross-host redirect, which is exactly the property being hand-rolled, and
     # the CDN URL it lands on is signed and needs no credential.
+    # aria2 with 16 connections, where it exists. The checkpoint is the largest
+    # single thing a cold start pulls and one stream does not saturate the link;
+    # this is the difference between minutes and tens of minutes. It follows
+    # redirects itself and drops the auth header cross-host, same as curl.
+    if command -v aria2c >/dev/null 2>&1; then
+      if aria2c -x 16 -s 16 -k 1M --split=16 --min-split-size=1M \
+                --max-tries=5 --retry-wait=3 --connect-timeout=30 --timeout=60 \
+                --allow-overwrite=true --file-allocation=none \
+                --console-log-level=warn --summary-interval=0 \
+                --header "Authorization: Bearer ${token}" \
+                -d "$(dirname "$out")" -o "$(basename "$out")" "$url"; then
+        verify 200
+        exit 0
+      fi
+      echo "[fetch] aria2 failed, falling back to curl"
+    fi
+
     http=$(curl -sSL --retry 8 --retry-delay 3 --retry-all-errors \
              -H "Authorization: Bearer ${token}" \
              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
