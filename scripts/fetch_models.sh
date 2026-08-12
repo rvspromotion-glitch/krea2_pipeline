@@ -10,9 +10,12 @@
 # once for the whole run, against three to four hours of rendering.
 #
 # Downloads run concurrently — five files from three hosts, and the link is
-# nowhere near saturated by one of them. Output is captured per model and
-# printed on completion so five interleaved progress bars do not become one
-# unreadable log.
+# nowhere near saturated by one of them. Each one's output is captured and
+# printed when it finishes, so five interleaved progress bars do not become one
+# unreadable log — but that alone means total silence for minutes, and the last
+# line on screen is whichever download *started* last, which reads as "stuck on
+# a 110MB LoRA" when it is really the 12GB checkpoint still going. Hence the
+# ticker: one compact line every PROGRESS_EVERY seconds with what is on disk.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,6 +26,10 @@ MIN_BYTES=1048576
 
 # Enough to overlap the slow host with the fast ones without hammering either.
 MAX_PARALLEL="${MODEL_FETCH_PARALLEL:-4}"
+
+# How often the ticker reports. Often enough to look alive, rare enough not
+# to bury the real messages.
+PROGRESS_EVERY="${MODEL_FETCH_PROGRESS_EVERY:-15}"
 
 log() { echo "[models] $*"; }
 
@@ -37,7 +44,7 @@ if [ ! -f "$LIST" ]; then
 fi
 
 started=$(date +%s)
-declare -a pids=() names=() logs=()
+declare -a pids=() names=() logs=() wanted=()
 queued=0
 present=0
 
@@ -70,10 +77,45 @@ while read -r kind a b c; do
   else
     "$FETCH_ONE" civit "$url" "$dest" >"$logfile" 2>&1 &
   fi
-  pids+=($!); names+=("$name"); logs+=("$logfile")
+  pids+=($!); names+=("$name"); logs+=("$logfile"); wanted+=("$dest")
   queued=$((queued + 1))
   log "fetching ${name}…"
 done < "$LIST"
+
+# Ticker, for as long as anything is in flight. Sizes come off the filesystem
+# rather than from the downloaders, so it works the same for aria2 and curl.
+# Sleeps in one-second steps rather than one long one. `kill` on the subshell
+# does not reach an external `sleep` it is blocked in, so that orphan lives on
+# holding this script's stdout open — which stalls anything reading our output
+# for the rest of the interval. A flag file it can notice quickly avoids that.
+progress_ticker() {
+  local waited=0
+  while [ -f "$TICK_FLAG" ]; do
+    sleep 1
+    waited=$((waited + 1))
+    [ "$waited" -lt "$PROGRESS_EVERY" ] && continue
+    waited=0
+    line=""
+    for dest in "${wanted[@]}"; do
+      short="$(basename "$dest")"; short="${short%.safetensors}"
+      if [ -f "$dest" ]; then
+        line="${line}${short} $(du -h "$dest" 2>/dev/null | cut -f1)  "
+      else
+        line="${line}${short} …  "
+      fi
+    done
+    echo "[models] $(( $(date +%s) - started ))s  ${line}"
+  done
+}
+
+TICK_FLAG=""
+if [ "${#pids[@]}" -gt 0 ]; then
+  TICK_FLAG="$(mktemp)"
+  progress_ticker &
+  TICKER=$!
+  # Never outlive the fetch, however this script exits.
+  trap 'rm -f "$TICK_FLAG"' EXIT
+fi
 
 failed=0
 for i in "${!pids[@]}"; do
@@ -86,6 +128,12 @@ for i in "${!pids[@]}"; do
   fi
   rm -f "${logs[$i]}"
 done
+
+if [ -n "$TICK_FLAG" ]; then
+  rm -f "$TICK_FLAG"
+  wait "$TICKER" 2>/dev/null || true
+  trap - EXIT
+fi
 
 elapsed=$(( $(date +%s) - started ))
 

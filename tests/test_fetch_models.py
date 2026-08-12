@@ -8,6 +8,7 @@ model-not-found that says nothing about why.
 from __future__ import annotations
 
 import http.server
+import re
 import socket
 import subprocess
 import threading
@@ -23,6 +24,19 @@ HTML = b"<!doctype html><html></html>"
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith("/slow"):
+            # Dribbled out, so the ticker has something to report on.
+            import time
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(MODEL_BYTES)))
+            self.end_headers()
+            for offset in range(0, len(MODEL_BYTES), 256 * 1024):
+                try:
+                    self.wfile.write(MODEL_BYTES[offset:offset + 256 * 1024])
+                except BrokenPipeError:
+                    return
+                time.sleep(0.15)
+            return
         if self.path.startswith("/model"):
             body = MODEL_BYTES
         elif self.path.startswith("/page"):
@@ -147,3 +161,34 @@ def test_an_unknown_kind_is_rejected(server, tmp_path):
 
     assert result.returncode == 1
     assert "unknown kind" in result.stderr
+
+
+def test_progress_is_reported_while_downloads_are_in_flight(server, tmp_path):
+    """Without this the log goes silent for minutes and the last line on screen
+    is whichever download *started* last — which reads as "stuck on a small
+    LoRA" when it is really the 12GB checkpoint still going."""
+    listing = _list(tmp_path, f"""
+civit  {server}/slow  checkpoints/a.safetensors
+""")
+
+    result = _run(listing, tmp_path / "models", MODEL_FETCH_PROGRESS_EVERY="1")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    ticks = [l for l in result.stdout.splitlines() if re.match(r"\[models\] \d+s ", l)]
+    assert ticks, f"no progress lines:\n{result.stdout}"
+    assert "a " in ticks[0], "a tick must name the file it is reporting on"
+
+
+def test_the_ticker_does_not_outlive_the_fetch(server, tmp_path):
+    """It sleeps in a subshell holding this script's stdout. An orphan there
+    stalls whatever is reading our output for the rest of the interval."""
+    import time
+
+    listing = _list(tmp_path, f"civit  {server}/model  checkpoints/a.safetensors\n")
+
+    started = time.monotonic()
+    _run(listing, tmp_path / "models", MODEL_FETCH_PROGRESS_EVERY="30")
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 10, (
+        f"took {elapsed:.1f}s — the ticker is holding stdout open past the fetch")

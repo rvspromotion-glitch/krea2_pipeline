@@ -170,3 +170,67 @@ def test_a_renamed_role_node_fails_loudly():
 
     with pytest.raises(graph_mod.GraphError, match="Character lora"):
         graph_mod._by_title(g, "Character lora")
+
+
+# ── Links into nodes that produce nothing ────────────────────────────────────
+
+# Terminal display/output nodes: RETURN_TYPES is empty, so ComfyUI's validation
+# raises "tuple index out of range" on anything reading from them and rejects
+# the whole prompt. Invisible in the UI, where the wire looks perfectly normal.
+NO_OUTPUT_CLASSES = {
+    "SaveImage", "PreviewImage", "PreviewAny", "SaveAnimatedWEBP", "SaveAnimatedPNG",
+}
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_nothing_reads_from_an_output_less_node(mode):
+    """This has now bitten twice: node 1031 fed from a SaveImage, and 2344's
+    prompt fed from a PreviewAny. Both rejected the prompt at validation."""
+    graph = graph_mod.load(mode)
+    offenders = [
+        f"{nid} ({node['class_type']}).{field} <- {value[0]} ({graph[value[0]]['class_type']})"
+        for nid, node in graph.items()
+        for field, value in (node.get("inputs") or {}).items()
+        if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str)
+        and graph.get(value[0], {}).get("class_type") in NO_OUTPUT_CLASSES
+    ]
+    assert not offenders, "links from a node with no outputs:\n  " + "\n  ".join(offenders)
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_an_encoder_reads_the_gemini_description_directly(mode):
+    """Not through the preview node that happened to be showing it.
+
+    Only *an* encoder, not every one: the carousel also has encoders fed by a
+    fixed instruction string, which is what they are supposed to take.
+    """
+    graph = graph_mod.load(mode)
+    sources = [graph[v[0]]["class_type"]
+               for n in graph.values() if n["class_type"] == "Krea2EditGroundedEncode"
+               for k, v in n["inputs"].items() if k == "prompt"
+               and isinstance(v, list) and isinstance(v[0], str)]
+    assert "Ask_Gemini_Batch" in sources, (
+        f"no encoder reads the image description; prompts come from {sorted(set(sources))}")
+
+
+# ── Seed range ───────────────────────────────────────────────────────────────
+
+def test_seeds_fit_the_narrowest_node():
+    """Ask_Gemini_Batch caps at 2**31 and rejects the whole prompt above it.
+
+    One ceiling for every seed field, set by the tightest one — a 2**53 seed
+    validates fine on KSampler and fails the job on the Gemini node.
+    """
+    assert graph_mod.SEED_MAX <= 2**31 - 1
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_every_generated_seed_is_in_range(mode):
+    for seed in (None, 1, 2**53, 2**63 - 1):
+        graph = graph_mod.patch(mode, seed=seed, **BASE)
+        values = [v for node in graph.values()
+                  for k, v in (node.get("inputs") or {}).items()
+                  if k in ("seed", "noise_seed") and isinstance(v, int)]
+        assert values
+        assert all(0 <= v <= 2**31 - 1 for v in values), \
+            f"out of range: {[v for v in values if v > 2**31 - 1]}"

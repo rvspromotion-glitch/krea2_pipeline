@@ -97,34 +97,46 @@ PY
       exit 1
     fi
 
-    # One request, and let curl follow the redirect itself.
-    #
-    # The previous version pre-resolved the redirect with `curl -I` so the token
-    # would not travel to the CDN. That is what broke this build: Civitai's
-    # signed CDN URL is issued for a GET, and the URL recovered from a HEAD
-    # chain served an HTML page, which then got downloaded and written out as a
-    # 9KB "checkpoint".
-    #
-    # It also bought nothing. curl already drops the Authorization header on a
-    # cross-host redirect, which is exactly the property being hand-rolled, and
-    # the CDN URL it lands on is signed and needs no credential.
     # aria2 with 16 connections, where it exists. The checkpoint is the largest
     # single thing a cold start pulls and one stream does not saturate the link;
-    # this is the difference between minutes and tens of minutes. It follows
-    # redirects itself and drops the auth header cross-host, same as curl.
+    # this is the difference between minutes and tens of minutes.
+    #
+    # Civitai answers with a redirect to a signed CDN URL, and the CDN rejects a
+    # request that still carries the Civitai Authorization header — which is why
+    # handing aria2 the original URL plus the header failed and fell back to a
+    # single curl stream. So resolve the redirect first and give aria2 the
+    # signed URL with no header at all.
+    #
+    # A *range* GET, not a HEAD. The signature is issued for the method that
+    # asked for it: a URL recovered from a HEAD chain serves a web page, which
+    # is exactly how this broke once before. `-r 0-0` is a real GET that
+    # transfers one byte.
+    signed=""
     if command -v aria2c >/dev/null 2>&1; then
+      signed=$(curl -sS -L -o /dev/null -r 0-0 \
+                 -H "Authorization: Bearer ${token}" \
+                 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+                 -w '%{url_effective}' "$url" 2>/dev/null) || signed=""
+    fi
+
+    if [ -n "$signed" ] && [ "$signed" != "$url" ]; then
+      echo "[fetch] resolved to $(printf '%s' "$signed" | sed 's#\(https\?://[^/]*\)/.*#\1/…#')"
       if aria2c -x 16 -s 16 -k 1M --split=16 --min-split-size=1M \
                 --max-tries=5 --retry-wait=3 --connect-timeout=30 --timeout=60 \
                 --allow-overwrite=true --file-allocation=none \
                 --console-log-level=warn --summary-interval=0 \
-                --header "Authorization: Bearer ${token}" \
-                -d "$(dirname "$out")" -o "$(basename "$out")" "$url"; then
+                -d "$(dirname "$out")" -o "$(basename "$out")" "$signed"; then
         verify 200
         exit 0
       fi
-      echo "[fetch] aria2 failed, falling back to curl"
+      echo "[fetch] aria2 failed on the signed URL, falling back to curl"
+    elif command -v aria2c >/dev/null 2>&1; then
+      echo "[fetch] no redirect to resolve, using curl"
     fi
 
+    # Fallback: one curl that follows its own redirect. Slower (single stream)
+    # but it needs nothing resolved in advance, and curl drops the auth header
+    # on the cross-host hop by itself.
     http=$(curl -sSL --retry 8 --retry-delay 3 --retry-all-errors \
              -H "Authorization: Bearer ${token}" \
              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
