@@ -15,11 +15,16 @@
 # fetched on cold start by entrypoint.sh (see models.txt).
 FROM runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
 
-# Pin to a release, not master. A moving ComfyUI under a fixed dependency set is
-# what turned a build failure into three: one rebuild picked up a new core
-# import (comfy_kitchen) that needed a newer torch than was installed, and the
-# traceback pointed at neither.
-ARG COMFYUI_REF=v0.9.2
+# Pin to a release, not master: a moving ComfyUI under a fixed dependency set
+# is two things in motion, and the collision surfaces as a traceback that points
+# at neither.
+#
+# It has to be recent, though. These graphs load a krea2 text encoder, and
+# CLIPLoader only learned that type well after v0.9.2 — which is what this was
+# pinned to, from a tag list I sorted lexically instead of by version, so
+# "v0.9.2" looked newer than "v0.32.0". It failed validation with
+# "type: 'krea2' not in [...]".
+ARG COMFYUI_REF=v0.32.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \

@@ -31,8 +31,11 @@ TITLE_CHARACTER_LORA = "Character lora"
 
 SUBJECT_PLACEHOLDER = "{subject}"
 
-# ComfyUI rejects seeds outside this range.
-SEED_MAX = 2**53 - 1
+# The narrowest seed input in these graphs, not the widest. Ask_Gemini_Batch
+# caps at 2**31 and rejects the whole prompt above it — "Value 3122519035678089
+# bigger than max of 2147483648" fails validation before anything renders. Every
+# other node accepts this range too, so one ceiling covers all of them.
+SEED_MAX = 2**31 - 1
 
 
 class GraphError(RuntimeError):

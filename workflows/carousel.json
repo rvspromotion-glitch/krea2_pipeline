@@ -572,18 +572,6 @@
       "title": "decode panel 3"
     }
   },
-  "2320": {
-    "inputs": {
-      "source": [
-        "2312",
-        0
-      ]
-    },
-    "class_type": "PreviewAny",
-    "_meta": {
-      "title": "Preview as Text"
-    }
-  },
   "2330": {
     "inputs": {
       "image1": [
@@ -664,7 +652,7 @@
   "2344": {
     "inputs": {
       "prompt": [
-        "2320",
+        "2312",
         0
       ],
       "grounding_px": 1024,

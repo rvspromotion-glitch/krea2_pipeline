@@ -36,7 +36,10 @@ for parent in BatchnodeI9 savezipi9; do
       echo "[nodes] hoisting $(basename "$sub") out of ${parent}"
       mv "$sub" "${CUSTOM_NODES}/$(basename "$sub")"
     done
-    rmdir "$dir" 2>/dev/null || true
+    # rm -rf, not rmdir: a leftover README keeps the directory alive, and
+    # ComfyUI then tries to import a package with no __init__.py and logs a
+    # FileNotFoundError traceback on every boot.
+    rm -rf "$dir"
   fi
 done
 
@@ -44,7 +47,8 @@ echo "[nodes] installing package requirements"
 for req in "${CUSTOM_NODES}"/*/requirements.txt; do
   [ -f "$req" ] || continue
   # Never let a node package pull its own torch: it would silently replace the
-  # cu124 build with a CPU wheel and every render would then run on the CPU.
+  # cu128 build from the base image with a CPU wheel, and every render would
+  # then silently run on the CPU.
   filtered="$(mktemp)"
   grep -viE '^\s*(torch|torchvision|torchaudio|torchsde|numpy|transformers|tokenizers|protobuf|opencv-python)\s*([<=>!].*)?$' \
     "$req" > "$filtered" || true
