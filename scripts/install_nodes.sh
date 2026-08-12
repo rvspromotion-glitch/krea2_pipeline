@@ -50,7 +50,9 @@ for req in "${CUSTOM_NODES}"/*/requirements.txt; do
   # cu128 build from the base image with a CPU wheel, and every render would
   # then silently run on the CPU.
   filtered="$(mktemp)"
-  grep -viE '^\s*(torch|torchvision|torchaudio|torchsde|numpy|transformers|tokenizers|protobuf|opencv-python)\s*([<=>!].*)?$' \
+  # opencv likewise: several packages ask for plain opencv-python, which
+  # replaces the contrib build and takes cv2.ximgproc with it.
+  grep -viE '^\s*(torch|torchvision|torchaudio|torchsde|numpy|transformers|tokenizers|protobuf|opencv-python|opencv-python-headless|opencv-contrib-python)\s*([<=>!].*)?$' \
     "$req" > "$filtered" || true
   pip install --no-cache-dir --prefer-binary -c "$CONSTRAINTS" -r "$filtered" || {
     echo "[nodes] WARNING: requirements failed for $(dirname "$req")"; }

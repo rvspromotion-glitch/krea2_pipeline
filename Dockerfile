@@ -49,7 +49,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # below so a node package's own requirements.txt cannot walk them back.
 COPY constraints.txt /build/constraints.txt
 ENV PIP_CONSTRAINT=/build/constraints.txt
-RUN pip install --no-cache-dir --prefer-binary -r /build/constraints.txt
+# The opencv variants all install into the same cv2/ directory, so having two of
+# them present is not "both work" — it is whichever unpacked last, with the
+# other's files half overwritten. The base image ships one; drop every variant
+# before the constraints file puts the contrib build in cleanly.
+RUN pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python || true \
+    && pip install --no-cache-dir --prefer-binary -r /build/constraints.txt
 
 # The rest of what these nodes import. Taken from the detailer's working set —
 # google-generativeai in particular is what Ask_Gemini_Batch needs, and

@@ -233,3 +233,30 @@ def test_the_entrypoint_supervises_both_processes():
     assert "wait -n" in entrypoint
     wait_line = next(l for l in entrypoint.splitlines() if l.strip().startswith("wait -n"))
     assert not wait_line.startswith(" "), "wait -n must run in the top-level shell"
+
+
+# ── opencv ───────────────────────────────────────────────────────────────────
+
+CONSTRAINTS = (REPO / "constraints.txt").read_text()
+INSTALL_NODES = (REPO / "scripts" / "install_nodes.sh").read_text()
+
+
+def test_the_contrib_opencv_build_is_the_one_requested():
+    """LayerStyle imports guidedFilter from cv2.ximgproc, which is contrib-only.
+
+    Plain opencv-python-headless gives a boot-time "Cannot import name
+    'guidedFilter'" and a subset of its nodes that silently do nothing.
+    """
+    assert re.search(r"^opencv-contrib-python-headless\b", CONSTRAINTS, re.M)
+    assert not re.search(r"^opencv-python(-headless)?\b", CONSTRAINTS, re.M)
+
+
+def test_conflicting_opencv_builds_are_removed_before_install():
+    """They share the cv2/ directory, so two installed at once is not two
+    working packages — it is one, partly overwritten by the other."""
+    assert re.search(r"pip uninstall.*opencv-python\b.*opencv-contrib-python\b", DOCKERFILE)
+
+
+def test_a_node_package_cannot_swap_the_contrib_build_out():
+    for name in ("opencv-python", "opencv-python-headless", "opencv-contrib-python"):
+        assert name in INSTALL_NODES, f"{name} is not filtered from node requirements"

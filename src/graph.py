@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import random
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -38,8 +40,84 @@ SUBJECT_PLACEHOLDER = "{subject}"
 SEED_MAX = 2**31 - 1
 
 
+# ── Nodes the worker refuses to run ──────────────────────────────────────────
+#
+# PathchSageAttentionKJ replaces ComfyUI's attention with SageAttention's Triton
+# kernels. Those kernels do not compile for the GPUs this endpoint actually gets
+# — Blackwell, sm_120 — and the failure is not a fallback, it is the job:
+#
+#   AccelerateMatmul.cpp:40 ... Assertion `false && "computeCapability not
+#   supported"' failed
+#   RuntimeError: PassManager::run failed
+#
+# raised inside the first KSampler step, after the twelve-gigabyte checkpoint has
+# already been staged. Every render on 12 Aug died there. ComfyUI's own default
+# (pytorch/SDPA attention, which it logs at boot) works on the same card, so the
+# node buys nothing here and costs everything.
+#
+# Stripped at load rather than deleted from the JSON on purpose: these workflows
+# are re-exported from ComfyUI by hand, the node is still in the desktop graph,
+# and a re-export would otherwise walk this straight back in.
+#
+# Maps class_type -> {output index: the input that output is a pass-through of}.
+# Consumers are rewired to that input and the node is dropped.
+BYPASS_CLASSES: dict[str, dict[int, str]] = {
+    "PathchSageAttentionKJ": {0: "model"},
+}
+
+SAGE_ENV = "KREA2_SAGE_ATTENTION"
+
+
+def _sage_requested() -> bool:
+    """Escape hatch for an endpoint on a card SageAttention does support."""
+    return os.environ.get(SAGE_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 class GraphError(RuntimeError):
     """The graph is not shaped the way the patcher expects."""
+
+
+def bypass(graph: dict, class_type: str, passthrough: dict[int, str]) -> list[str]:
+    """Remove every node of `class_type`, reconnecting its consumers upstream.
+
+    Returns the ids removed. A node whose pass-through input is a literal rather
+    than a link is a hard error: there is nothing to reconnect to, and silently
+    leaving it in place would reintroduce exactly the crash this exists to stop.
+    """
+    removed = []
+    for nid in [n for n, node in graph.items() if node.get("class_type") == class_type]:
+        inputs = graph[nid].get("inputs") or {}
+        for out_idx, in_name in passthrough.items():
+            upstream = inputs.get(in_name)
+            if not (isinstance(upstream, list) and len(upstream) == 2):
+                raise GraphError(
+                    f"cannot bypass {class_type} node {nid}: its {in_name!r} input is "
+                    f"{upstream!r}, not a link to another node"
+                )
+            for other in graph.values():
+                for key, value in (other.get("inputs") or {}).items():
+                    if (isinstance(value, list) and len(value) == 2
+                            and value[0] == nid and value[1] == out_idx):
+                        other["inputs"][key] = list(upstream)
+        del graph[nid]
+        removed.append(nid)
+    return removed
+
+
+def sanitise(graph: dict) -> dict:
+    """Drop the nodes this hardware cannot run. Mutates and returns `graph`."""
+    if _sage_requested():
+        return graph
+    for class_type, passthrough in BYPASS_CLASSES.items():
+        removed = bypass(graph, class_type, passthrough)
+        if removed:
+            print(
+                f"[graph] bypassed {len(removed)} {class_type} node(s) {removed} — "
+                f"SageAttention's Triton kernels do not build for this GPU; set "
+                f"{SAGE_ENV}=1 to keep them.",
+                file=sys.stderr, flush=True,
+            )
+    return graph
 
 
 def load(mode: str) -> dict:
@@ -48,7 +126,7 @@ def load(mode: str) -> dict:
     path = WORKFLOW_DIR / _FILES[mode]
     if not path.exists():
         raise GraphError(f"workflow missing: {path}")
-    return json.loads(path.read_text())
+    return sanitise(json.loads(path.read_text()))
 
 
 # ── Node lookup ──────────────────────────────────────────────────────────────
