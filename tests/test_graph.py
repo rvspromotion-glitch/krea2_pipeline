@@ -234,3 +234,79 @@ def test_every_generated_seed_is_in_range(mode):
         assert values
         assert all(0 <= v <= 2**31 - 1 for v in values), \
             f"out of range: {[v for v in values if v > 2**31 - 1]}"
+
+
+# ── SageAttention ────────────────────────────────────────────────────────────
+#
+# On 12 Aug every render died in the first sampler step, after the 12GB
+# checkpoint had already been staged:
+#
+#   [INFO] Using sage attention mode: auto
+#   AccelerateMatmul.cpp:40 ... Assertion `false && "computeCapability not
+#   supported"' failed
+#   RuntimeError: PassManager::run failed
+#
+# SageAttention's Triton kernels do not compile for the endpoint's Blackwell
+# cards. ComfyUI's own default attention runs the same graph on the same GPU.
+
+def test_the_shipped_workflows_still_carry_the_sage_node():
+    """If this ever fails the graphs changed and the rest of this section is
+    testing nothing — which is the quiet way for the crash to come back."""
+    for mode in graph_mod.MODES:
+        raw = json.loads((ROOT / "workflows" / graph_mod._FILES[mode]).read_text())
+        assert any(n["class_type"] == "PathchSageAttentionKJ" for n in raw.values())
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_no_loaded_graph_switches_attention_backends(mode):
+    graph = graph_mod.load(mode)
+    assert not [nid for nid, n in graph.items()
+                if n["class_type"] in graph_mod.BYPASS_CLASSES]
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_bypassing_reconnects_consumers_rather_than_orphaning_them(mode):
+    """A removed pass-through must hand its consumers to its own upstream, or
+    the LoRA chain loses the checkpoint and the job fails validation instead."""
+    raw = json.loads((ROOT / "workflows" / graph_mod._FILES[mode]).read_text())
+    sage = [nid for nid, n in raw.items() if n["class_type"] == "PathchSageAttentionKJ"]
+    upstream = {nid: raw[nid]["inputs"]["model"] for nid in sage}
+    consumers = {
+        (nid, field): raw[nid]["inputs"][field][0]
+        for nid, n in raw.items()
+        for field, v in (n.get("inputs") or {}).items()
+        if isinstance(v, list) and len(v) == 2 and v[0] in sage
+    }
+    assert consumers, "nothing consumed the sage node — check the fixture"
+
+    graph = graph_mod.load(mode)
+
+    for (nid, field), was in consumers.items():
+        assert graph[nid]["inputs"][field] == upstream[was], (
+            f"{nid}.{field} was not reconnected to {upstream[was]}")
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_the_bypass_leaves_no_dangling_links(mode):
+    graph = graph_mod.load(mode)
+    for nid, n in graph.items():
+        for field, v in (n.get("inputs") or {}).items():
+            if isinstance(v, list) and len(v) == 2 and isinstance(v[0], str):
+                assert v[0] in graph, f"{nid}.{field} -> missing {v[0]}"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_sage_can_be_kept_for_an_endpoint_whose_cards_support_it(mode, monkeypatch):
+    monkeypatch.setenv(graph_mod.SAGE_ENV, "1")
+    graph = graph_mod.load(mode)
+    assert [nid for nid, n in graph.items()
+            if n["class_type"] == "PathchSageAttentionKJ"]
+
+
+def test_a_passthrough_fed_by_a_literal_is_a_hard_error():
+    """Nothing to reconnect to. Dropping it silently would leave the consumer
+    reading a node that no longer exists."""
+    graph = {"1": {"class_type": "PathchSageAttentionKJ",
+                   "inputs": {"model": "not-a-link"}}}
+    with pytest.raises(graph_mod.GraphError, match="not a link"):
+        graph_mod.bypass(graph, "PathchSageAttentionKJ", {0: "model"})

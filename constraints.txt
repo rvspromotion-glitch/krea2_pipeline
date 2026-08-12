@@ -13,9 +13,16 @@ protobuf<5
 transformers>=4.45.0
 safetensors
 mediapipe==0.10.14
-opencv-python-headless
 
-# PathchSageAttentionKJ is in both graphs, so this is load-bearing rather than
-# an optimisation. The base image is a -devel one, so a version that needs nvcc
-# can still build.
+# contrib, not plain: LayerStyle imports guidedFilter from cv2.ximgproc, which
+# only the contrib build ships. Without it every boot logs "Cannot import name
+# 'guidedFilter' from 'cv2.ximgproc'" and a handful of its nodes are quietly
+# broken. It is a strict superset of opencv-python-headless, and headless still,
+# so no GUI libs come along.
+opencv-contrib-python-headless
+
+# Not load-bearing. Both graphs carry a PathchSageAttentionKJ node, but the
+# worker strips it (see BYPASS_CLASSES in src/graph.py) because its Triton
+# kernels abort on Blackwell. Kept installed only so KREA2_SAGE_ATTENTION=1
+# works on an endpoint whose cards do support it.
 sageattention
