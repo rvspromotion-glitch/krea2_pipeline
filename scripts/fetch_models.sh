@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetch every model in models.txt into MODELS_DIR. Run at container start.
 #
-# The weights are not in the image: ~18GB of models on top of torch does not
+# The weights are not in the image: ~39GB of models on top of torch does not
 # build on a hosted GitHub runner. So the image carries ComfyUI, the nodes and
 # the code, and the worker pulls the weights once on cold start.
 #

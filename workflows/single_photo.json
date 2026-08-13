@@ -21,7 +21,7 @@
   },
   "1030": {
     "inputs": {
-      "image": "b2c3ef57802037dd0506bac569bf6655.jpg"
+      "image": "7bef933278e28681fa0d3b7ef2e17cab.jpg"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -105,7 +105,7 @@
         "2313",
         0
       ],
-      "seed": 1293947516,
+      "seed": 825197514,
       "temperature": 0.7,
       "num_predict": 512,
       "images": [
@@ -129,7 +129,7 @@
   },
   "2314": {
     "inputs": {
-      "seed": 468934769668417,
+      "seed": 409524664158483,
       "steps": 8,
       "cfg": 1,
       "sampler_name": "er_sde",
@@ -265,14 +265,14 @@
   },
   "2346": {
     "inputs": {
-      "seed": 158840377286219,
+      "seed": 61472416881200,
       "steps": 4,
       "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "bong_tangent",
       "denoise": 0.2,
       "model": [
-        "1034",
+        "2342",
         0
       ],
       "positive": [
@@ -284,7 +284,7 @@
         0
       ],
       "latent_image": [
-        "2314",
+        "2444",
         0
       ]
     },
@@ -372,7 +372,7 @@
       "grayscale": false,
       "emboss": false,
       "edge_enhance": false,
-      "seed": 203666756451070,
+      "seed": 1125829694804520,
       "image": [
         "2318",
         0
@@ -394,6 +394,205 @@
     "class_type": "SaveImage",
     "_meta": {
       "title": "Save Image"
+    }
+  },
+  "2434": {
+    "inputs": {
+      "seed": 955730245388639,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "2437",
+        0
+      ],
+      "positive": [
+        "2451",
+        0
+      ],
+      "negative": [
+        "2452",
+        0
+      ],
+      "latent_image": [
+        "2454",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "EDIT: sampler (8 steps CFG 1)"
+    }
+  },
+  "2435": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "2436": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "2437": {
+    "inputs": {
+      "unet_name": "Flux2-Klein-9B-True-V3-int8mixedrow.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "2438": {
+    "inputs": {
+      "text": "remove tattoos, remove birthmarks, remove piercings (unless earings), keep everything else exactly the same. make sure to keep the lighting, contrast and colours the same as image 1.",
+      "clip": [
+        "2436",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "2439": {
+    "inputs": {
+      "samples": [
+        "2314",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "2440": {
+    "inputs": {
+      "pixels": [
+        "2439",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "2442": {
+    "inputs": {
+      "samples": [
+        "2434",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "2444": {
+    "inputs": {
+      "pixels": [
+        "2442",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "2451": {
+    "inputs": {
+      "conditioning": [
+        "2438",
+        0
+      ],
+      "latent": [
+        "2440",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Set Reference Latent"
+    }
+  },
+  "2452": {
+    "inputs": {
+      "conditioning": [
+        "2453",
+        0
+      ],
+      "latent": [
+        "2440",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Set Reference Latent"
+    }
+  },
+  "2453": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "2436",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "2454": {
+    "inputs": {
+      "width": [
+        "2404",
+        1
+      ],
+      "height": [
+        "2404",
+        2
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
     }
   },
   "2402:139": {

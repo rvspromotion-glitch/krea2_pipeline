@@ -310,3 +310,131 @@ def test_a_passthrough_fed_by_a_literal_is_a_hard_error():
                    "inputs": {"model": "not-a-link"}}}
     with pytest.raises(graph_mod.GraphError, match="not a link"):
         graph_mod.bypass(graph, "PathchSageAttentionKJ", {0: "model"})
+
+
+# ── The Flux2 cleanup pass ───────────────────────────────────────────────────
+#
+# krea2 is already asked to remove tattoos in the Gemini system prompt, but
+# asking a generator not to draw something is far less reliable than editing it
+# out afterwards. So the anchor goes krea2 → Flux2 Klein → krea2 refine, and the
+# refine at denoise 0.2 puts the krea2 look back over Flux's output.
+#
+# The placement is the load-bearing part in the carousel: every panel is
+# generated *from* the anchor image — as the edit model's source latent and as
+# the grounding image — so cleaning the anchor cleans all four published slides
+# with one pass rather than four.
+
+FLUX_MODELS = {
+    "Flux2-Klein-9B-True-V3-int8mixedrow.safetensors",
+    "qwen_3_8b_fp8mixed.safetensors",
+    "flux2-vae.safetensors",
+}
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_the_cleanup_pass_sits_between_the_two_krea2_samplers(mode):
+    """Not after the refine. The refine is what re-imposes the krea2 look on
+    Flux's output; downstream of it, Flux's render would be what publishes."""
+    g = graph_mod.load(mode)
+
+    # krea2 pass 1 → decode → encode(flux) → flux sampler → decode → encode(krea2)
+    assert g["2439"]["inputs"]["samples"] == ["2314", 0]
+    assert g["2440"]["inputs"]["pixels"] == ["2439", 0]
+    assert g["2434"]["inputs"]["latent_image"] == ["2454", 0]
+    assert g["2442"]["inputs"]["samples"] == ["2434", 0]
+    assert g["2444"]["inputs"]["pixels"] == ["2442", 0]
+    assert g["2346"]["inputs"]["latent_image"] == ["2444", 0], \
+        "the krea2 refine must read the cleaned latent, not the raw one"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_each_vae_encode_uses_the_matching_decoder(mode):
+    """Krea2 and Flux2 have different latent spaces. Crossing the VAEs here
+    produces noise that still renders, still saves, and still publishes."""
+    g = graph_mod.load(mode)
+    krea2_vae = [nid for nid, n in g.items()
+                 if n["class_type"] == "VAELoader"
+                 and "Wan" in n["inputs"]["vae_name"]][0]
+    flux_vae = [nid for nid, n in g.items()
+                if n["class_type"] == "VAELoader"
+                and "flux2" in n["inputs"]["vae_name"]][0]
+
+    assert g["2439"]["inputs"]["vae"] == [krea2_vae, 0]   # krea2 latent out
+    assert g["2440"]["inputs"]["vae"] == [flux_vae, 0]    # into flux space
+    assert g["2442"]["inputs"]["vae"] == [flux_vae, 0]    # flux latent out
+    assert g["2444"]["inputs"]["vae"] == [krea2_vae, 0]   # back to krea2 space
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_the_cleanup_prompt_survives_patching(mode):
+    """It is a fixed correction, not a per-persona one — the {subject}
+    substitution must not touch it and it must never come back empty."""
+    g = graph_mod.patch(mode, **BASE)
+
+    text = g["2438"]["inputs"]["text"]
+    assert "tattoo" in text.lower()
+    assert "{subject}" not in text
+    assert g["2453"]["inputs"]["text"] == "", "the negative is deliberately empty"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_the_flux_pass_renders_at_the_anchor_size(mode):
+    """A cleanup that resamples to a different size would land back in the
+    krea2 refine at the wrong resolution."""
+    g = graph_mod.load(mode)
+
+    assert g["2454"]["class_type"] == "EmptyFlux2LatentImage"
+    assert g["2454"]["inputs"]["width"] == g["2317"]["inputs"]["width"]
+    assert g["2454"]["inputs"]["height"] == g["2317"]["inputs"]["height"]
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_both_reference_latents_point_at_the_source(mode):
+    """Flux2's edit pattern: the empty latent is the canvas and the reference
+    carries the image. A reference wired to the canvas would edit nothing."""
+    g = graph_mod.load(mode)
+
+    assert g["2451"]["inputs"]["latent"] == ["2440", 0]
+    assert g["2452"]["inputs"]["latent"] == ["2440", 0]
+    assert g["2434"]["inputs"]["positive"] == ["2451", 0]
+    assert g["2434"]["inputs"]["negative"] == ["2452", 0]
+
+
+def test_the_carousel_panels_are_built_from_the_cleaned_anchor():
+    """The whole reason one pass is enough. If a panel ever stopped reading the
+    anchor, three of four published slides would keep their tattoos and nothing
+    would say so."""
+    g = graph_mod.load("carousel")
+
+    # anchor refine → decode → resize; that resize is what the panels consume.
+    assert g["2318"]["inputs"]["samples"] == ["2346", 0]
+    assert g["1031"]["inputs"]["image"] == ["2318", 0]
+    assert g["2408:2406"]["inputs"]["image"] == ["1031", 0]
+
+    consumers = {f"{nid}.{field}"
+                 for nid, n in g.items()
+                 for field, v in n["inputs"].items()
+                 if isinstance(v, list) and len(v) == 2 and v[0] == "2408:2406"}
+    # Every panel's edit-model source latent and every panel's grounding image.
+    assert "1032.pixels" in consumers, "panels lost their source latent"
+    for encoder in ("1036", "1037", "2102", "2103"):
+        assert f"{encoder}.image" in consumers, f"{encoder} stopped grounding on the anchor"
+
+
+def test_the_anchor_slide_published_is_the_cleaned_one():
+    """It is batched into the carousel as well as feeding the panels."""
+    g = graph_mod.load("carousel")
+    assert g["2330"]["inputs"]["image2"] == ["1031", 0]
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_the_flux_models_are_loaded_by_the_expected_node_types(mode):
+    g = graph_mod.load(mode)
+    loaded = {n["inputs"].get("unet_name") or n["inputs"].get("clip_name")
+              or n["inputs"].get("vae_name")
+              for n in g.values()
+              if n["class_type"] in ("UNETLoader", "CLIPLoader", "VAELoader")}
+
+    assert FLUX_MODELS <= loaded
+    assert g["2436"]["inputs"]["type"] == "flux2", \
+        "the Flux2 text encoder needs the flux2 CLIP type, not krea2's"
