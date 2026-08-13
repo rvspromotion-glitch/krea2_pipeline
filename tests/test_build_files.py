@@ -115,7 +115,7 @@ def test_every_model_the_graphs_load_is_in_the_model_list():
 
 
 def test_the_image_does_not_bake_the_weights_in():
-    """~18GB of models on top of torch does not build on a hosted runner."""
+    """~39GB of models on top of torch does not build on a hosted runner."""
     assert "--from=models" not in DOCKERFILE
     assert "fetch_model.sh civit" not in DOCKERFILE, \
         "models are fetched at container start, not at build time"

@@ -6,7 +6,7 @@
 # Only what the two graphs actually load. The UNETLoader that pulled krea2_raw
 # was removed as dead, so the AiO checkpoint does that work alone.
 #
-# These are NOT baked into the image. ~18GB of models plus torch does not build
+# These are NOT baked into the image. ~39GB of models plus torch does not build
 # on a hosted GitHub runner, so the image carries ComfyUI and the code and the
 # worker fetches the weights on cold start. Skip-if-present, so a warm worker
 # and a restarted container pay nothing.
@@ -19,3 +19,15 @@ hf     Comfy-Org/Krea-2  text_encoders/qwen3vl_4b_fp8_scaled.safetensors  clip/q
 hf     Kijai/WanVideo_comfy  Wan2_1_VAE_fp32.safetensors  vae/Wan2_1_VAE_fp32.safetensors
 hf     conradlocke/krea2-identity-edit  krea2_identity_edit_v1_2.safetensors  loras/krea2_identity_edit_v1_2.safetensors
 civit  https://civitai.red/api/download/models/3075606?fileId=2954661  loras/Lenovo_ultrareal.safetensors
+
+# Flux2 Klein, the cleanup pass. It runs between the two krea2 samplers and
+# takes tattoos, birthmarks and piercings off — krea2 is asked to do the same
+# in the Gemini prompt, but asking a generator not to draw something is far
+# less reliable than editing it out afterwards.
+#
+# ~18.4GB on top of the 20GB above. That is the whole reason the endpoint needs
+# a container disk of 80GB rather than 50: the fetch dies part-way through
+# otherwise, and a half-downloaded checkpoint fails every job of the batch.
+hf     wikeeyang/Flux2-Klein-9B-True-V3  Flux2-Klein-9B-True-V3-int8mixedrow.safetensors  diffusion_models/Flux2-Klein-9B-True-V3-int8mixedrow.safetensors
+hf     Comfy-Org/vae-text-encorder-for-flux-klein-9b  split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors  clip/qwen_3_8b_fp8mixed.safetensors
+hf     Comfy-Org/vae-text-encorder-for-flux-klein-9b  split_files/vae/flux2-vae.safetensors  vae/flux2-vae.safetensors

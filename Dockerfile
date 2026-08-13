@@ -39,7 +39,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # The rust downloader, for the multi-GB weights fetched on cold start.
     HF_HUB_ENABLE_HF_TRANSFER=1
 
-# aria2 is not optional here — it is what makes an 18GB cold start minutes
+# aria2 is not optional here — it is what makes a 39GB cold start minutes
 # rather than tens of minutes. ffmpeg, libgl and libglib are the node set's.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git curl wget aria2 ffmpeg libgl1 libglib2.0-0 ca-certificates \
