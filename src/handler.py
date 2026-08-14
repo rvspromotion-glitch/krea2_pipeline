@@ -8,6 +8,7 @@ the worker warm across a mixed batch, which is where the real time saving is.
 Job input
 ---------
     mode            "single" | "carousel"
+    workflow_version "v1" (default) | "v2"
     image_url       reference photo, fetched over HTTP
     image_b64       ...or inline base64 (image_url wins if both are given)
     lora_name       character LoRA filename
@@ -134,6 +135,10 @@ def run_job(payload: dict) -> dict:
     if mode not in graph_mod.MODES:
         raise JobError(f"mode must be one of {graph_mod.MODES}, got {mode!r}")
 
+    # Falls back rather than raising: an unrecognised version costs the
+    # experiment, not the day's render, and the log says which one ran.
+    version = graph_mod.normalise_version(payload.get("workflow_version"))
+
     trigger_word = _require(payload, "trigger_word")
     description = _require(payload, "description")
     gemini_key = _require(payload, "gemini_api_key")
@@ -154,8 +159,9 @@ def run_job(payload: dict) -> dict:
         description=description,
         gemini_api_key=gemini_key,
         seed=seed,
+        version=version,
     )
-    log.info("patched %s graph: %s", mode, graph_mod.describe(job_graph))
+    log.info("patched %s/%s graph: %s", version, mode, graph_mod.describe(job_graph))
 
     node = graph_mod.output_node(job_graph)
     prompt_id = comfy.submit(job_graph, client_id=f"krea2-{uuid.uuid4().hex}")
@@ -172,6 +178,7 @@ def run_job(payload: dict) -> dict:
 
     return {
         "mode": mode,
+        "workflow_version": version,
         "count": len(images),
         "seed": seed,
         "duration_s": round(time.time() - started, 1),

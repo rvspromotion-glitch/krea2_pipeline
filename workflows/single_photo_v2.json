@@ -1,0 +1,649 @@
+{
+  "56": {
+    "inputs": {
+      "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "57": {
+    "inputs": {
+      "vae_name": "Wan2_1_VAE_fp32.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "1030": {
+    "inputs": {
+      "image": "thekierstengrace_post_12_15_2022_1_17_07 AM2993419439443014460.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Input image"
+    }
+  },
+  "1033": {
+    "inputs": {
+      "lora_name": "Realism_engine.safetensors",
+      "strength_model": 0.4,
+      "model": [
+        "2311",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "EDIT: identity-edit LoRA"
+    }
+  },
+  "1034": {
+    "inputs": {
+      "lora_name": "Eva_step-002750_identity.safetensors",
+      "strength_model": 1,
+      "model": [
+        "2460",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Character lora"
+    }
+  },
+  "2305": {
+    "inputs": {
+      "lora_name": "krea2_identity_edit_v1_2.safetensors",
+      "strength_model": 1,
+      "model": [
+        "1034",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "POV lora"
+    }
+  },
+  "2311": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": [
+        "2459",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "2312": {
+    "inputs": {
+      "prompt": "Describe this image in detail for use as an image generation prompt.",
+      "safety_settings": "BLOCK_NONE",
+      "response_type": "text",
+      "model": "gemini-3.1-flash-lite-preview",
+      "api_key": "",
+      "proxy": "",
+      "system_instruction": [
+        "2313",
+        0
+      ],
+      "seed": 424017458,
+      "temperature": 0.7,
+      "num_predict": 512,
+      "images": [
+        "2348",
+        0
+      ]
+    },
+    "class_type": "Ask_Gemini_Batch",
+    "_meta": {
+      "title": "Ask Gemini (Batch)"
+    }
+  },
+  "2313": {
+    "inputs": {
+      "value": "You are a shot director for a photo for social media. You receive the anchor photo, Write exactly what you see. Make sure to focus on onlyfans content creation e.g. focus on ass out/ tits focussed. pick either one. try to stay close to the original pose of the reference image.\n\nStarting with \"Make a new shot of {subject}, smooth clear skin, clean nose, lips, eyebrows, face, navel and body, the woman,\". ONLY MENTION IF VISIBLE: Name the new pose concretely: where her hands are, where her weight sits, which way her hips and shoulders turn, where she looks, the mouth shape in the reference image, and where the camera sits compared to the anchor. (only mention things that are visible)\n\nDescribe each part of the photo: same outfit, same room, same light, same person. describe the background in detail.\n\nIF there is any text, write it out, otherwise make sure the text is removed from the prompt (e.g. a bottle with text should have nothing on it, a blank bottle, but a shirt or outfit with text should write it out)\n\nNever mention tattoos, never mention piercings (unless earings)\n\nIF there is a phone in the reference image, its always a white iphone 16 with apple logo.\n\nIF its a mirror selfie, explain the reflection to reduce doubles.\n\nWrite only positive statements about what is present in each shot.\n\nOutput nothing else. Zero headings, zero numbering, zero commentary."
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "T2I Prompt template"
+    }
+  },
+  "2314": {
+    "inputs": {
+      "seed": 336082018719146,
+      "steps": 6,
+      "cfg": 1,
+      "sampler_name": "res_2s",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "2342",
+        0
+      ],
+      "positive": [
+        "2344",
+        0
+      ],
+      "negative": [
+        "2416",
+        0
+      ],
+      "latent_image": [
+        "2317",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "EDIT: sampler (8 steps CFG 1)"
+    }
+  },
+  "2317": {
+    "inputs": {
+      "width": [
+        "2404",
+        1
+      ],
+      "height": [
+        "2404",
+        2
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EDIT: target latent (match AR!)"
+    }
+  },
+  "2318": {
+    "inputs": {
+      "samples": [
+        "2346",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "decode panel 3"
+    }
+  },
+  "2342": {
+    "inputs": {
+      "ref_boost": 1,
+      "ref_boost_a": 1,
+      "fit_mode": "fit",
+      "model": [
+        "2305",
+        0
+      ],
+      "source_latent": [
+        "2343",
+        0
+      ]
+    },
+    "class_type": "Krea2EditModelPatch",
+    "_meta": {
+      "title": "EDIT: model patch"
+    }
+  },
+  "2343": {
+    "inputs": {
+      "pixels": [
+        "2402:139",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "EDIT: encode source"
+    }
+  },
+  "2344": {
+    "inputs": {
+      "prompt": [
+        "2312",
+        0
+      ],
+      "grounding_px": 1024,
+      "system_prompt": "",
+      "clip": [
+        "56",
+        0
+      ],
+      "image": [
+        "2402:139",
+        0
+      ]
+    },
+    "class_type": "Krea2EditGroundedEncode",
+    "_meta": {
+      "title": "EDIT: instruction (positive)"
+    }
+  },
+  "2345": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": 1440,
+      "height": 1920,
+      "crop": "center",
+      "image": [
+        "1030",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "EDIT: resize to target AR"
+    }
+  },
+  "2346": {
+    "inputs": {
+      "seed": 261552172496158,
+      "steps": 2,
+      "cfg": 1,
+      "sampler_name": "deis_3m",
+      "scheduler": "bong_tangent",
+      "denoise": 0.2,
+      "model": [
+        "2342",
+        0
+      ],
+      "positive": [
+        "2344",
+        0
+      ],
+      "negative": [
+        "2416",
+        0
+      ],
+      "latent_image": [
+        "2444",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "EDIT: sampler (8 steps CFG 1)"
+    }
+  },
+  "2348": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "1030",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale Image to Total Pixels"
+    }
+  },
+  "2399": {
+    "inputs": {
+      "value": 1440
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Width"
+    }
+  },
+  "2400": {
+    "inputs": {
+      "value": 1920
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Height"
+    }
+  },
+  "2404": {
+    "inputs": {
+      "image": [
+        "2402:139",
+        0
+      ]
+    },
+    "class_type": "GetImageSizeAndCount",
+    "_meta": {
+      "title": "Get Image Size & Count"
+    }
+  },
+  "2416": {
+    "inputs": {
+      "prompt": "tattoo, tattoos, body jewellery, piercing, piercings, nose stud, septum ring, navel piercing, belly button ring, lip ring, eyebrow bar, tongue stud, nipple jewellery, birthmark, mole",
+      "grounding_px": 1024,
+      "system_prompt": "",
+      "clip": [
+        "56",
+        0
+      ],
+      "image": [
+        "2402:139",
+        0
+      ]
+    },
+    "class_type": "Krea2EditGroundedEncode",
+    "_meta": {
+      "title": "EDIT: instruction (negative)"
+    }
+  },
+  "2422": {
+    "inputs": {
+      "recipe": "custom",
+      "jpeg_quality": 90,
+      "passes": 1,
+      "noise_scale": 0,
+      "sharpness": 0.9,
+      "contrast": 0.9,
+      "posterize_bits": 8,
+      "blur_radius": 0.1,
+      "pixelate_box": 1,
+      "invert": false,
+      "grayscale": false,
+      "emboss": false,
+      "edge_enhance": false,
+      "seed": 356466583068180,
+      "image": [
+        "2318",
+        0
+      ]
+    },
+    "class_type": "MoreJPEG",
+    "_meta": {
+      "title": "Realisim Enhancor"
+    }
+  },
+  "2423": {
+    "inputs": {
+      "filename_prefix": "Krea2_turbo",
+      "images": [
+        "2422",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "2454": {
+    "inputs": {
+      "width": [
+        "2404",
+        1
+      ],
+      "height": [
+        "2404",
+        2
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "2458": {
+    "inputs": {
+      "unet_name": "krea2_raw_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "2459": {
+    "inputs": {
+      "lora_name": "krea2_turbo_lora_rank_64_bf16.safetensors",
+      "strength_model": 0.6,
+      "model": [
+        "2458",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "EDIT: identity-edit LoRA"
+    }
+  },
+  "2460": {
+    "inputs": {
+      "lora_name": "NiceGirls_Ultrarealistic.safetensors",
+      "strength_model": 0.35,
+      "model": [
+        "1033",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "EDIT: identity-edit LoRA"
+    }
+  },
+  "2402:139": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": [
+        "2399",
+        0
+      ],
+      "height": [
+        "2400",
+        0
+      ],
+      "crop": "center",
+      "image": [
+        "2345",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Upscale Image"
+    }
+  },
+  "2434": {
+    "inputs": {
+      "seed": 955730245388639,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "2437",
+        0
+      ],
+      "positive": [
+        "2451",
+        0
+      ],
+      "negative": [
+        "2452",
+        0
+      ],
+      "latent_image": [
+        "2454",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "EDIT: sampler (8 steps CFG 1)"
+    }
+  },
+  "2435": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "2436": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "2437": {
+    "inputs": {
+      "unet_name": "Flux2-Klein-9B-True-V3-int8mixedrow.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "2438": {
+    "inputs": {
+      "text": "remove tattoos, remove birthmarks, remove all body jewellery: nose stud, septum ring, navel barbell, belly button ring, lip ring, eyebrow bar, tongue stud, nipple jewellery, leaving smooth bare unbroken skin where each one was, with no hole, scar or indentation. the earrings in her ears stay exactly as they are. keep everything else exactly the same. make sure to keep the lighting, contrast and colours the same as image 1.",
+      "clip": [
+        "2436",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "2439": {
+    "inputs": {
+      "samples": [
+        "2314",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "2440": {
+    "inputs": {
+      "pixels": [
+        "2439",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "2442": {
+    "inputs": {
+      "samples": [
+        "2434",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "2444": {
+    "inputs": {
+      "pixels": [
+        "2442",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "2451": {
+    "inputs": {
+      "conditioning": [
+        "2438",
+        0
+      ],
+      "latent": [
+        "2440",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Set Reference Latent"
+    }
+  },
+  "2452": {
+    "inputs": {
+      "conditioning": [
+        "2453",
+        0
+      ],
+      "latent": [
+        "2440",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Set Reference Latent"
+    }
+  },
+  "2453": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "2436",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  }
+}

@@ -3,8 +3,9 @@
 #   hf     <repo>  <path-in-repo>       <dest under MODELS_DIR>
 #   civit  <url>                        <dest under MODELS_DIR>
 #
-# Only what the two graphs actually load. The UNETLoader that pulled krea2_raw
-# was removed as dead, so the AiO checkpoint does that work alone.
+# Only what the four graphs actually load. v1 renders from the all-in-one
+# checkpoint; v2 renders from the raw model plus the turbo LoRA. Both sets are
+# fetched because either version can be selected per job.
 #
 # These are NOT baked into the image. ~39GB of models plus torch does not build
 # on a hosted GitHub runner, so the image carries ComfyUI and the code and the
@@ -13,6 +14,7 @@
 #
 # Destination filenames are what the graphs reference — renaming one here
 # without renaming it in workflows/*.json breaks the render, not the download.
+
 
 civit  https://civitai.red/api/download/models/3107962?fileId=2996137  checkpoints/AiO_krea2_checkpoint_int8_8steps.safetensors
 hf     Comfy-Org/Krea-2  text_encoders/qwen3vl_4b_fp8_scaled.safetensors  clip/qwen3vl_4b_fp8_scaled.safetensors
@@ -31,3 +33,14 @@ civit  https://civitai.red/api/download/models/3075606?fileId=2954661  loras/Len
 hf     wikeeyang/Flux2-Klein-9B-True-V3  Flux2-Klein-9B-True-V3-int8mixedrow.safetensors  diffusion_models/Flux2-Klein-9B-True-V3-int8mixedrow.safetensors
 hf     Comfy-Org/vae-text-encorder-for-flux-klein-9b  split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors  clip/qwen_3_8b_fp8mixed.safetensors
 hf     Comfy-Org/vae-text-encorder-for-flux-klein-9b  split_files/vae/flux2-vae.safetensors  vae/flux2-vae.safetensors
+
+# ── v2 graphs ──
+#
+# The raw model plus the turbo LoRA replace the all-in-one checkpoint: the LoRA
+# layers on top of Raw at strength 0.6, it does not stand in for it, so both are
+# needed. v1 keeps using the AiO checkpoint above, which is why nothing here
+# replaces anything — the two versions run side by side.
+hf     Comfy-Org/Krea-2  diffusion_models/krea2_raw_fp8_scaled.safetensors  diffusion_models/krea2_raw_fp8_scaled.safetensors
+hf     Comfy-Org/Krea-2  loras/krea2_turbo_lora_rank_64_bf16.safetensors  loras/krea2_turbo_lora_rank_64_bf16.safetensors
+civit  https://civitai.red/api/download/models/3070702?fileId=2949534  loras/Realism_engine.safetensors
+civit  https://civitai.red/api/download/models/3075498?fileId=2954554  loras/NiceGirls_Ultrarealistic.safetensors

@@ -71,10 +71,10 @@ def test_carousel_anchor_no_longer_flows_through_saveimage():
                 )
 
 
-@pytest.mark.parametrize("mode", ["single", "carousel"])
-def test_no_api_key_is_committed(mode):
+@pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
+def test_no_api_key_is_committed(version, mode):
     """The exports shipped a live Gemini key inline. It must never come back."""
-    raw = (ROOT / "workflows" / graph_mod._FILES[mode]).read_text()
+    raw = (ROOT / "workflows" / graph_mod._FILES[(version, mode)]).read_text()
     assert "AIza" not in raw
     g = json.loads(raw)
     for n in g.values():
@@ -252,23 +252,23 @@ def test_every_generated_seed_is_in_range(mode):
 def test_the_shipped_workflows_still_carry_the_sage_node():
     """If this ever fails the graphs changed and the rest of this section is
     testing nothing — which is the quiet way for the crash to come back."""
-    for mode in graph_mod.MODES:
-        raw = json.loads((ROOT / "workflows" / graph_mod._FILES[mode]).read_text())
-        assert any(n["class_type"] == "PathchSageAttentionKJ" for n in raw.values())
+    for key, name in graph_mod._FILES.items():
+        raw = json.loads((ROOT / "workflows" / name).read_text())
+        assert any(n["class_type"] == "PathchSageAttentionKJ" for n in raw.values()), key
 
 
-@pytest.mark.parametrize("mode", graph_mod.MODES)
-def test_no_loaded_graph_switches_attention_backends(mode):
-    graph = graph_mod.load(mode)
+@pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
+def test_no_loaded_graph_switches_attention_backends(version, mode):
+    graph = graph_mod.load(mode, version)
     assert not [nid for nid, n in graph.items()
                 if n["class_type"] in graph_mod.BYPASS_CLASSES]
 
 
-@pytest.mark.parametrize("mode", graph_mod.MODES)
-def test_bypassing_reconnects_consumers_rather_than_orphaning_them(mode):
+@pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
+def test_bypassing_reconnects_consumers_rather_than_orphaning_them(version, mode):
     """A removed pass-through must hand its consumers to its own upstream, or
     the LoRA chain loses the checkpoint and the job fails validation instead."""
-    raw = json.loads((ROOT / "workflows" / graph_mod._FILES[mode]).read_text())
+    raw = json.loads((ROOT / "workflows" / graph_mod._FILES[(version, mode)]).read_text())
     sage = [nid for nid, n in raw.items() if n["class_type"] == "PathchSageAttentionKJ"]
     upstream = {nid: raw[nid]["inputs"]["model"] for nid in sage}
     consumers = {
@@ -279,7 +279,7 @@ def test_bypassing_reconnects_consumers_rather_than_orphaning_them(mode):
     }
     assert consumers, "nothing consumed the sage node — check the fixture"
 
-    graph = graph_mod.load(mode)
+    graph = graph_mod.load(mode, version)
 
     for (nid, field), was in consumers.items():
         assert graph[nid]["inputs"][field] == upstream[was], (
@@ -438,3 +438,117 @@ def test_the_flux_models_are_loaded_by_the_expected_node_types(mode):
     assert FLUX_MODELS <= loaded
     assert g["2436"]["inputs"]["type"] == "flux2", \
         "the Flux2 text encoder needs the flux2 CLIP type, not krea2's"
+
+
+# ── Workflow versions ────────────────────────────────────────────────────────
+#
+# v2 is a second generation of the same two graphs. What makes it swappable is
+# not that it looks like v1 but that it still answers to the same four job
+# variables and still ends in one SaveImage. These pin that.
+
+@pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
+def test_every_version_takes_the_same_job_variables(version, mode):
+    graph = graph_mod.patch(
+        mode,
+        image_filename="ref.png",
+        lora_name="Chloe_v1.safetensors",
+        trigger_word="ch10e",
+        description="young woman with red hair",
+        gemini_api_key="KEY",
+        seed=7,
+        version=version,
+    )
+
+    image = graph_mod._by_title(graph, graph_mod.TITLE_INPUT_IMAGE)[0]
+    lora = graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]
+    assert graph[image]["inputs"]["image"] == "ref.png"
+    assert graph[lora]["inputs"]["lora_name"] == "Chloe_v1.safetensors"
+    assert graph_mod.output_node(graph)
+
+    prompts = [n["inputs"]["value"] for n in graph.values()
+               if n["class_type"] == "PrimitiveStringMultiline"]
+    assert prompts, "no prompt template survived patching"
+    assert all("ch10e, young woman with red hair" in p for p in prompts)
+    assert not any(graph_mod.SUBJECT_PLACEHOLDER in p for p in prompts)
+
+
+@pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
+def test_every_link_resolves_after_patching(version, mode):
+    """A dangling link is a ComfyUI validation failure at hour three, not here."""
+    graph = graph_mod.patch(
+        mode, image_filename="r.png", lora_name="l.safetensors",
+        trigger_word="t", description="d", gemini_api_key="K", version=version)
+
+    dangling = [
+        f"{nid}.{field} -> {value[0]}"
+        for nid, node in graph.items()
+        for field, value in node["inputs"].items()
+        if isinstance(value, list) and len(value) == 2
+        and isinstance(value[0], str) and value[0] not in graph
+    ]
+    assert not dangling, dangling
+
+
+def test_v1_is_the_default():
+    """A version that has to be asked for cannot become the default by accident."""
+    assert graph_mod.DEFAULT_VERSION == "v1"
+    assert graph_mod.load("single") == graph_mod.load("single", "v1")
+
+
+def test_an_unknown_version_falls_back_rather_than_failing_the_render():
+    assert graph_mod.normalise_version("v2") == "v2"
+    assert graph_mod.normalise_version("V2") == "v2"
+    assert graph_mod.normalise_version("v3") == graph_mod.DEFAULT_VERSION
+    assert graph_mod.normalise_version(None) == graph_mod.DEFAULT_VERSION
+
+
+def test_load_rejects_a_version_it_does_not_have():
+    """normalise_version is the forgiving door; load itself is not."""
+    with pytest.raises(graph_mod.GraphError, match="unknown version"):
+        graph_mod.load("single", "v3")
+
+
+def test_the_two_versions_are_actually_different_graphs():
+    """Guards against a copy-paste that ships v1 twice under two names."""
+    assert graph_mod.load("single", "v1") != graph_mod.load("single", "v2")
+    assert graph_mod.load("carousel", "v1") != graph_mod.load("carousel", "v2")
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v2_keeps_the_flux_cleanup_pass(mode):
+    """It was deleted from the graph that was handed over for quick testing, and
+    without it v2 would silently drop the tattoo and jewellery removal."""
+    graph = graph_mod.load(mode, "v2")
+
+    encoders = [n for n in graph.values() if n["class_type"] == "CLIPTextEncode"]
+    assert any("body jewellery" in (n["inputs"].get("text") or "") for n in encoders), \
+        "the flux2 cleanup prompt is missing from v2"
+    assert any(n["class_type"] == "ReferenceLatent" for n in graph.values())
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_the_negative_prompt_does_not_negate_itself(mode):
+    """A negative prompt lists what to steer away from, so "no piercings" there
+    inverts the entry it prefixes. The terms have to be stated plainly."""
+    graph = graph_mod.load(mode, "v2")
+
+    negatives = {
+        nid for node in graph.values()
+        if node["class_type"] == "KSampler"
+        for nid in [node["inputs"].get("negative", [None])[0]]
+        if nid in graph
+    }
+    for nid in negatives:
+        text = str(graph[nid]["inputs"].get("prompt") or graph[nid]["inputs"].get("text") or "")
+        assert " no " not in f" {text} ", f"{nid} negates its own terms: {text!r}"
+        assert not text.strip().startswith("no "), f"{nid} negates its own terms: {text!r}"
+
+
+def test_the_negative_prompt_still_names_the_things_being_removed():
+    graph = graph_mod.load("single", "v2")
+    negative = [n for n in graph.values()
+                if (n.get("_meta") or {}).get("title") == "EDIT: instruction (negative)"]
+    assert len(negative) == 1
+    text = negative[0]["inputs"]["prompt"]
+    for term in ("tattoo", "piercing", "nose stud", "navel piercing"):
+        assert term in text, term
