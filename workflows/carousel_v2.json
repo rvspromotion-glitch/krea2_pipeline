@@ -782,7 +782,7 @@
   },
   "2416": {
     "inputs": {
-      "prompt": "no tattoo, no piercings, no nose piercing, no navel piercing",
+      "prompt": "tattoo, tattoos, body jewellery, piercing, piercings, nose stud, septum ring, navel piercing, belly button ring, lip ring, eyebrow bar, tongue stud, nipple jewellery, birthmark, mole",
       "grounding_px": 1024,
       "system_prompt": "",
       "clip": [
@@ -796,7 +796,7 @@
     },
     "class_type": "Krea2EditGroundedEncode",
     "_meta": {
-      "title": "EDIT: instruction (positive)"
+      "title": "EDIT: instruction (negative)"
     }
   },
   "2417": {

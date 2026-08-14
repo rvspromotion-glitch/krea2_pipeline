@@ -524,3 +524,31 @@ def test_v2_keeps_the_flux_cleanup_pass(mode):
     assert any("body jewellery" in (n["inputs"].get("text") or "") for n in encoders), \
         "the flux2 cleanup prompt is missing from v2"
     assert any(n["class_type"] == "ReferenceLatent" for n in graph.values())
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_the_negative_prompt_does_not_negate_itself(mode):
+    """A negative prompt lists what to steer away from, so "no piercings" there
+    inverts the entry it prefixes. The terms have to be stated plainly."""
+    graph = graph_mod.load(mode, "v2")
+
+    negatives = {
+        nid for node in graph.values()
+        if node["class_type"] == "KSampler"
+        for nid in [node["inputs"].get("negative", [None])[0]]
+        if nid in graph
+    }
+    for nid in negatives:
+        text = str(graph[nid]["inputs"].get("prompt") or graph[nid]["inputs"].get("text") or "")
+        assert " no " not in f" {text} ", f"{nid} negates its own terms: {text!r}"
+        assert not text.strip().startswith("no "), f"{nid} negates its own terms: {text!r}"
+
+
+def test_the_negative_prompt_still_names_the_things_being_removed():
+    graph = graph_mod.load("single", "v2")
+    negative = [n for n in graph.values()
+                if (n.get("_meta") or {}).get("title") == "EDIT: instruction (negative)"]
+    assert len(negative) == 1
+    text = negative[0]["inputs"]["prompt"]
+    for term in ("tattoo", "piercing", "nose stud", "navel piercing"):
+        assert term in text, term

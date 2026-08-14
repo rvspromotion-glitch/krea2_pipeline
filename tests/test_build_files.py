@@ -102,24 +102,9 @@ def test_every_model_the_graphs_load_is_in_the_model_list():
                     referenced.add(value)
 
     fetched = {Path(dest).name for _, dest in _model_list()}
-
-    # The v2 graphs load four weights nobody has a source URL for yet. They are
-    # listed in models.txt as PENDING rather than guessed at, and v2 cannot
-    # render until they are real. Named here so this test still fails the moment
-    # a *fifth* model goes missing — the gap is recorded, not ignored.
-    PENDING_V2 = {
-        "krea2_turbo_lora_rank_64_bf16.safetensors",
-        "Realism_engine.safetensors",
-        "NiceGirls_Ultrarealistic.safetensors",
-        "krea2_raw_fp8_scaled.safetensors",
-    }
-    manifest = (REPO / "models.txt").read_text()
-    for name in PENDING_V2:
-        assert name in manifest, f"{name} is not even recorded as pending"
-
     # The character LoRA is per-persona: patched into the graph per job and
     # fetched from Radar via lora_url, so it is deliberately not in models.txt.
-    character_lora = referenced - fetched - PENDING_V2
+    character_lora = referenced - fetched
     assert len(character_lora) == 1, (
         f"expected exactly one per-job LoRA slot, got {sorted(character_lora)} — "
         f"models.txt covers {sorted(fetched)}")
