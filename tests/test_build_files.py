@@ -102,16 +102,29 @@ def test_every_model_the_graphs_load_is_in_the_model_list():
                     referenced.add(value)
 
     fetched = {Path(dest).name for _, dest in _model_list()}
-    # The character LoRA is per-persona: patched into the graph per job and
-    # fetched from Radar via lora_url, so it is deliberately not in models.txt.
-    character_lora = referenced - fetched
-    assert len(character_lora) == 1, (
-        f"expected exactly one per-job LoRA slot, got {sorted(character_lora)} — "
-        f"models.txt covers {sorted(fetched)}")
 
-    from_graph = REPO / "src" / "graph.py"
-    assert "TITLE_CHARACTER_LORA" in from_graph.read_text(), \
-        "the per-job LoRA is patched by title; that lookup must still exist"
+    # Character LoRAs are per-persona: patched into the graph per job and fetched
+    # from Radar, so they are deliberately not in models.txt. v3 has two — a
+    # Krea2 one for the detail passes and a Klein one for the flux edit, because
+    # a Krea2 LoRA cannot load into Flux.
+    #
+    # Anything else missing from the manifest is a real gap, so rather than
+    # counting the leftovers this checks each one is actually sitting in a slot
+    # the patcher fills by title.
+    import graph as graph_mod
+
+    per_job_titles = {graph_mod.TITLE_CHARACTER_LORA,
+                      graph_mod.TITLE_FLUX_CHARACTER_LORA}
+    per_job_slots = set()
+    for key, name in graph_mod._FILES.items():
+        for node in json.loads((WORKFLOWS / name).read_text()).values():
+            if (node.get("_meta") or {}).get("title") in per_job_titles:
+                per_job_slots.add(node["inputs"]["lora_name"])
+
+    unaccounted = referenced - fetched - per_job_slots
+    assert not unaccounted, (
+        f"{sorted(unaccounted)} are loaded by a graph but neither in models.txt "
+        f"nor sitting in a per-job LoRA slot — a render would fail on them")
 
 
 def test_the_image_does_not_bake_the_weights_in():

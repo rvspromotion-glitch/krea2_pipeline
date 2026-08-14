@@ -446,18 +446,21 @@ def test_the_flux_models_are_loaded_by_the_expected_node_types(mode):
 # not that it looks like v1 but that it still answers to the same four job
 # variables and still ends in one SaveImage. These pin that.
 
+
+def _job_kwargs(version):
+    """The job variables every version takes, plus the two only v3 has."""
+    kwargs = dict(image_filename="ref.png", lora_name="Chloe_v1.safetensors",
+                  trigger_word="ch10e", description="young woman with red hair",
+                  gemini_api_key="KEY", seed=7, version=version)
+    if version == "v3":
+        kwargs.update(persona_reference="chloe_face.png",
+                      flux_lora_name="Chloe_klein.safetensors")
+    return kwargs
+
+
 @pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
 def test_every_version_takes_the_same_job_variables(version, mode):
-    graph = graph_mod.patch(
-        mode,
-        image_filename="ref.png",
-        lora_name="Chloe_v1.safetensors",
-        trigger_word="ch10e",
-        description="young woman with red hair",
-        gemini_api_key="KEY",
-        seed=7,
-        version=version,
-    )
+    graph = graph_mod.patch(mode, **_job_kwargs(version))
 
     image = graph_mod._by_title(graph, graph_mod.TITLE_INPUT_IMAGE)[0]
     lora = graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]
@@ -475,9 +478,7 @@ def test_every_version_takes_the_same_job_variables(version, mode):
 @pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
 def test_every_link_resolves_after_patching(version, mode):
     """A dangling link is a ComfyUI validation failure at hour three, not here."""
-    graph = graph_mod.patch(
-        mode, image_filename="r.png", lora_name="l.safetensors",
-        trigger_word="t", description="d", gemini_api_key="K", version=version)
+    graph = graph_mod.patch(mode, **_job_kwargs(version))
 
     dangling = [
         f"{nid}.{field} -> {value[0]}"
@@ -498,14 +499,15 @@ def test_v1_is_the_default():
 def test_an_unknown_version_falls_back_rather_than_failing_the_render():
     assert graph_mod.normalise_version("v2") == "v2"
     assert graph_mod.normalise_version("V2") == "v2"
-    assert graph_mod.normalise_version("v3") == graph_mod.DEFAULT_VERSION
+    assert graph_mod.normalise_version("v3") == "v3"
+    assert graph_mod.normalise_version("v9") == graph_mod.DEFAULT_VERSION
     assert graph_mod.normalise_version(None) == graph_mod.DEFAULT_VERSION
 
 
 def test_load_rejects_a_version_it_does_not_have():
     """normalise_version is the forgiving door; load itself is not."""
     with pytest.raises(graph_mod.GraphError, match="unknown version"):
-        graph_mod.load("single", "v3")
+        graph_mod.load("single", "v9")
 
 
 def test_the_two_versions_are_actually_different_graphs():
@@ -552,3 +554,168 @@ def test_the_negative_prompt_still_names_the_things_being_removed():
     text = negative[0]["inputs"]["prompt"]
     for term in ("tattoo", "piercing", "nose stud", "navel piercing"):
         assert term in text, term
+
+
+# ── v3: Flux generates, Krea2 details ────────────────────────────────────────
+#
+# v1 and v2 generate with Krea2 and use Flux as a cleanup pass. v3 inverts that:
+# Flux edits the scraped frame into the persona, then Krea2 bashes the detail
+# in. Everything Krea2 reads therefore has to point at the Flux render — left on
+# the scraped frame, the edit patch pulls the picture back toward the woman who
+# was just swapped out, which is the failure this section exists to prevent.
+
+def _v3(mode):
+    return graph_mod.load(mode, "v3")
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v3_gives_flux_two_references(mode):
+    """One for the scene, one for the persona. Stock ReferenceLatent chains, so
+    both ride a single conditioning without a custom node."""
+    graph = _v3(mode)
+    chained = [
+        nid for nid, n in graph.items()
+        if n["class_type"] == "ReferenceLatent"
+        and isinstance(n["inputs"].get("conditioning"), list)
+        and graph.get(n["inputs"]["conditioning"][0], {}).get("class_type") == "ReferenceLatent"
+    ]
+    assert chained, "no ReferenceLatent is chained onto another — only one reference reaches Flux"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v3_krea2_reads_the_flux_render_not_the_scraped_frame(mode):
+    """The single most likely way a first v3 attempt comes out wrong."""
+    graph = _v3(mode)
+
+    flux_decodes = {
+        nid for nid, n in graph.items()
+        if n["class_type"] == "VAEDecode"
+        and graph[n["inputs"]["vae"][0]]["inputs"].get("vae_name") == "flux2-vae.safetensors"
+    }
+    assert flux_decodes, "no decode uses the flux VAE — flux is not generating"
+
+    for nid, n in graph.items():
+        if n["class_type"] not in ("Krea2EditGroundedEncode", "Krea2EditModelPatch"):
+            continue
+        upstream = n["inputs"].get("image") or n["inputs"].get("source_latent")
+        seen, node = set(), upstream
+        while isinstance(node, list) and node[0] in graph and node[0] not in seen:
+            seen.add(node[0])
+            if node[0] in flux_decodes:
+                break
+            inputs = graph[node[0]]["inputs"]
+            node = inputs.get("pixels") or inputs.get("samples") or inputs.get("image")
+        else:
+            raise AssertionError(
+                f"{nid} ({n['class_type']}) is not grounded on a flux render")
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v3_has_no_krea2_generate_pass(mode):
+    """Flux generates in v3. A leftover denoise-1 Krea2 sampler would throw the
+    flux render away and paint a new picture over the top of it."""
+    graph = _v3(mode)
+    krea_vae = "Wan2_1_VAE_fp32.safetensors"
+    full = [nid for nid, n in graph.items()
+            if n["class_type"] == "KSampler" and float(n["inputs"]["denoise"]) >= 0.99
+            and "FLUX" not in (n.get("_meta") or {}).get("title", "")]
+    assert not full, f"Krea2 still generates from scratch in {mode}: {full}"
+
+
+def test_v3_single_details_then_settles():
+    """Two Krea2 passes on a single: 0.40 to stamp the look, 0.20 to settle."""
+    graph = _v3("single")
+    denoises = sorted(float(n["inputs"]["denoise"]) for n in graph.values()
+                      if n["class_type"] == "KSampler"
+                      and "FLUX" not in (n.get("_meta") or {}).get("title", ""))
+    assert denoises == [0.2, 0.4]
+
+
+def test_v3_carousel_settles_every_slide_the_same_way():
+    """Four flux renders, four identical Krea2 settle passes — no slide gets a
+    different amount of treatment to the others."""
+    graph = _v3("carousel")
+    flux_gens = [n for n in graph.values()
+                 if (n.get("_meta") or {}).get("title", "").endswith(": generate")]
+    settles = [n for n in graph.values()
+               if "settle pass" in (n.get("_meta") or {}).get("title", "")]
+    assert len(flux_gens) == 4, f"expected 4 flux generations, got {len(flux_gens)}"
+    assert len(settles) == 4
+    assert {float(n["inputs"]["denoise"]) for n in settles} == {0.2}
+
+
+def test_v3_refuses_to_render_the_persona_baked_into_the_export():
+    for field in ("persona_reference", "flux_lora_name"):
+        kwargs = _job_kwargs("v3")
+        kwargs.pop(field)
+        with pytest.raises(graph_mod.GraphError, match="slot but no"):
+            graph_mod.patch("single", **kwargs)
+
+
+@pytest.mark.parametrize("version", ["v1", "v2"])
+def test_the_older_versions_still_patch_without_the_v3_inputs(version):
+    """v3's extra slots must not become required for graphs that lack them."""
+    graph = graph_mod.patch("single", **_job_kwargs(version))
+    assert graph_mod.output_node(graph)
+
+
+def _model_chain(graph, nid, seen=None):
+    """Walk a sampler's model input back to its loader, collecting LoRAs."""
+    seen = seen or []
+    node = graph.get(nid)
+    if node is None:
+        return seen
+    if node["class_type"] == "LoraLoaderModelOnly":
+        seen = seen + [(node.get("_meta") or {}).get("title")]
+    upstream = node["inputs"].get("model")
+    if isinstance(upstream, list) and upstream[0] in graph:
+        return _model_chain(graph, upstream[0], seen)
+    return seen
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v3_carries_both_character_loras(mode):
+    """v3 runs two models, so a persona needs two LoRAs — a Krea2 one for the
+    detail passes and a Klein one for the flux edit. Neither substitutes for the
+    other, and a sampler that lost its own would render a stranger at full
+    quality, which is the failure least likely to be noticed in review.
+    """
+    graph = graph_mod.load(mode, "v3")
+
+    krea2_samplers, flux_samplers = [], []
+    for nid, node in graph.items():
+        if node["class_type"] != "KSampler":
+            continue
+        title = (node.get("_meta") or {}).get("title", "")
+        (flux_samplers if title.startswith("FLUX") else krea2_samplers).append(nid)
+
+    assert krea2_samplers and flux_samplers
+
+    for nid in krea2_samplers:
+        chain = _model_chain(graph, graph[nid]["inputs"]["model"][0])
+        assert graph_mod.TITLE_CHARACTER_LORA in chain, \
+            f"{nid} ({graph[nid]['_meta']['title']}) lost the Krea2 character LoRA: {chain}"
+
+    for nid in flux_samplers:
+        chain = _model_chain(graph, graph[nid]["inputs"]["model"][0])
+        assert graph_mod.TITLE_FLUX_CHARACTER_LORA in chain, \
+            f"{nid} ({graph[nid]['_meta']['title']}) lost the Klein character LoRA: {chain}"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_the_two_loras_do_not_cross_models(mode):
+    """A Krea2 LoRA cannot load into Flux and vice versa — loading one into the
+    wrong base is a job-time failure, not a quality one."""
+    graph = graph_mod.load(mode, "v3")
+
+    for nid, node in graph.items():
+        if node["class_type"] != "KSampler":
+            continue
+        title = (node.get("_meta") or {}).get("title", "")
+        chain = _model_chain(graph, node["inputs"]["model"][0])
+        if title.startswith("FLUX"):
+            assert graph_mod.TITLE_CHARACTER_LORA not in chain, \
+                f"{nid} loads the Krea2 LoRA into Flux"
+        else:
+            assert graph_mod.TITLE_FLUX_CHARACTER_LORA not in chain, \
+                f"{nid} loads the Klein LoRA into Krea2"
