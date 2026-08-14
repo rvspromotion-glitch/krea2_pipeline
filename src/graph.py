@@ -35,7 +35,7 @@ MODES = ("single", "carousel")
 #
 # v1 stays the default. It is what has been rendering, and a version that has
 # to be asked for cannot become the default by accident.
-VERSIONS = ("v1", "v2")
+VERSIONS = ("v1", "v2", "v3")
 DEFAULT_VERSION = "v1"
 
 _FILES = {
@@ -43,6 +43,8 @@ _FILES = {
     ("v1", "carousel"): "carousel.json",
     ("v2", "single"):   "single_photo_v2.json",
     ("v2", "carousel"): "carousel_v2.json",
+    ("v3", "single"):   "single_photo_v3.json",
+    ("v3", "carousel"): "carousel_v3.json",
 }
 
 
@@ -64,6 +66,13 @@ def normalise_version(raw: str | None) -> str:
 # titles); ids are not.
 TITLE_INPUT_IMAGE = "Input image"
 TITLE_CHARACTER_LORA = "Character lora"
+
+# v3 only. Flux edits the scraped frame into the persona, so it needs the
+# persona's own face as a second reference and its own LoRA — a Krea2 LoRA
+# cannot load into Flux. Patched when the graph has the slot and skipped when it
+# does not, which is what lets one patch() serve all three versions.
+TITLE_PERSONA_REFERENCE = "Persona reference"
+TITLE_FLUX_CHARACTER_LORA = "Flux character lora"
 
 SUBJECT_PLACEHOLDER = "{subject}"
 
@@ -167,6 +176,20 @@ def load(mode: str, version: str = DEFAULT_VERSION) -> dict:
 
 # ── Node lookup ──────────────────────────────────────────────────────────────
 
+def _optional_by_title(graph: dict, title: str) -> str | None:
+    """The node with this title, or None. More than one is still an error.
+
+    Used for the roles only some versions have. Absent is fine; ambiguous is
+    not — two nodes claiming the same role means a re-export went wrong, and
+    guessing between them is how the wrong persona ships.
+    """
+    hits = [nid for nid, n in graph.items()
+            if (n.get("_meta") or {}).get("title") == title]
+    if len(hits) > 1:
+        raise GraphError(f"expected at most one node titled {title!r}, found {hits}")
+    return hits[0] if hits else None
+
+
 def _by_title(graph: dict, title: str, expected: int = 1) -> list[str]:
     hits = [nid for nid, n in graph.items() if (n.get("_meta") or {}).get("title") == title]
     if len(hits) != expected:
@@ -236,6 +259,8 @@ def patch(
     gemini_api_key: str,
     seed: int | None = None,
     version: str = DEFAULT_VERSION,
+    persona_reference: str | None = None,
+    flux_lora_name: str | None = None,
 ) -> dict:
     """Return a job-ready copy of the graph. The template on disk is untouched.
 
@@ -254,6 +279,26 @@ def patch(
 
     lora_node = _by_title(graph, TITLE_CHARACTER_LORA)[0]
     graph[lora_node]["inputs"]["lora_name"] = lora_name
+
+    # v3's two extra per-persona slots. A graph that has the slot and was given
+    # nothing to put in it is a hard error: it would otherwise render whatever
+    # persona happened to be saved in the exported file.
+    persona_node = _optional_by_title(graph, TITLE_PERSONA_REFERENCE)
+    if persona_node is not None:
+        if not persona_reference:
+            raise GraphError(
+                f"{version}/{mode} has a {TITLE_PERSONA_REFERENCE!r} slot but no "
+                f"persona_reference was given — it would render the face baked "
+                f"into the exported graph")
+        graph[persona_node]["inputs"]["image"] = persona_reference
+
+    flux_lora_node = _optional_by_title(graph, TITLE_FLUX_CHARACTER_LORA)
+    if flux_lora_node is not None:
+        if not flux_lora_name:
+            raise GraphError(
+                f"{version}/{mode} has a {TITLE_FLUX_CHARACTER_LORA!r} slot but no "
+                f"flux_lora_name was given")
+        graph[flux_lora_node]["inputs"]["lora_name"] = flux_lora_name
 
     _set_subject(graph, subject)
 
