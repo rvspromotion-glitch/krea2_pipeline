@@ -657,3 +657,65 @@ def test_the_older_versions_still_patch_without_the_v3_inputs(version):
     """v3's extra slots must not become required for graphs that lack them."""
     graph = graph_mod.patch("single", **_job_kwargs(version))
     assert graph_mod.output_node(graph)
+
+
+def _model_chain(graph, nid, seen=None):
+    """Walk a sampler's model input back to its loader, collecting LoRAs."""
+    seen = seen or []
+    node = graph.get(nid)
+    if node is None:
+        return seen
+    if node["class_type"] == "LoraLoaderModelOnly":
+        seen = seen + [(node.get("_meta") or {}).get("title")]
+    upstream = node["inputs"].get("model")
+    if isinstance(upstream, list) and upstream[0] in graph:
+        return _model_chain(graph, upstream[0], seen)
+    return seen
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v3_carries_both_character_loras(mode):
+    """v3 runs two models, so a persona needs two LoRAs — a Krea2 one for the
+    detail passes and a Klein one for the flux edit. Neither substitutes for the
+    other, and a sampler that lost its own would render a stranger at full
+    quality, which is the failure least likely to be noticed in review.
+    """
+    graph = graph_mod.load(mode, "v3")
+
+    krea2_samplers, flux_samplers = [], []
+    for nid, node in graph.items():
+        if node["class_type"] != "KSampler":
+            continue
+        title = (node.get("_meta") or {}).get("title", "")
+        (flux_samplers if title.startswith("FLUX") else krea2_samplers).append(nid)
+
+    assert krea2_samplers and flux_samplers
+
+    for nid in krea2_samplers:
+        chain = _model_chain(graph, graph[nid]["inputs"]["model"][0])
+        assert graph_mod.TITLE_CHARACTER_LORA in chain, \
+            f"{nid} ({graph[nid]['_meta']['title']}) lost the Krea2 character LoRA: {chain}"
+
+    for nid in flux_samplers:
+        chain = _model_chain(graph, graph[nid]["inputs"]["model"][0])
+        assert graph_mod.TITLE_FLUX_CHARACTER_LORA in chain, \
+            f"{nid} ({graph[nid]['_meta']['title']}) lost the Klein character LoRA: {chain}"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_the_two_loras_do_not_cross_models(mode):
+    """A Krea2 LoRA cannot load into Flux and vice versa — loading one into the
+    wrong base is a job-time failure, not a quality one."""
+    graph = graph_mod.load(mode, "v3")
+
+    for nid, node in graph.items():
+        if node["class_type"] != "KSampler":
+            continue
+        title = (node.get("_meta") or {}).get("title", "")
+        chain = _model_chain(graph, node["inputs"]["model"][0])
+        if title.startswith("FLUX"):
+            assert graph_mod.TITLE_CHARACTER_LORA not in chain, \
+                f"{nid} loads the Krea2 LoRA into Flux"
+        else:
+            assert graph_mod.TITLE_FLUX_CHARACTER_LORA not in chain, \
+                f"{nid} loads the Klein LoRA into Krea2"
