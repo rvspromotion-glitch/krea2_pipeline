@@ -13,6 +13,17 @@
 #
 # Destination filenames are what the graphs reference — renaming one here
 # without renaming it in workflows/*.json breaks the render, not the download.
+#
+# PENDING — the v2 graphs need these four and no source is known for them yet.
+# Until each has a real hf/civit line, a v2 render fails at ComfyUI validation
+# with "model not found". v1 is unaffected and stays the default for exactly
+# this reason. Add the lines, do not rename the files: the graphs load them by
+# these names.
+#
+#   loras/krea2_turbo_lora_rank_64_bf16.safetensors
+#   loras/Realism_engine.safetensors
+#   loras/NiceGirls_Ultrarealistic.safetensors
+#   diffusion_models/krea2_raw_fp8_scaled.safetensors
 
 civit  https://civitai.red/api/download/models/3107962?fileId=2996137  checkpoints/AiO_krea2_checkpoint_int8_8steps.safetensors
 hf     Comfy-Org/Krea-2  text_encoders/qwen3vl_4b_fp8_scaled.safetensors  clip/qwen3vl_4b_fp8_scaled.safetensors

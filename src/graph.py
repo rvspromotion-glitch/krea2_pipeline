@@ -24,7 +24,41 @@ from typing import Any
 WORKFLOW_DIR = Path(__file__).resolve().parent.parent / "workflows"
 
 MODES = ("single", "carousel")
-_FILES = {"single": "single_photo.json", "carousel": "carousel.json"}
+
+# Two generations of the same two graphs, switchable per job.
+#
+# v2 replaces the all-in-one checkpoint with a raw UNET plus a turbo LoRA, adds
+# a second realism LoRA, and runs fewer sampler steps on a different
+# sampler/scheduler pair. Both still take the same four job variables and still
+# end in one SaveImage, which is what lets the worker treat them as
+# interchangeable — everything below this line is version-agnostic on purpose.
+#
+# v1 stays the default. It is what has been rendering, and a version that has
+# to be asked for cannot become the default by accident.
+VERSIONS = ("v1", "v2")
+DEFAULT_VERSION = "v1"
+
+_FILES = {
+    ("v1", "single"):   "single_photo.json",
+    ("v1", "carousel"): "carousel.json",
+    ("v2", "single"):   "single_photo_v2.json",
+    ("v2", "carousel"): "carousel_v2.json",
+}
+
+
+def normalise_version(raw: str | None) -> str:
+    """Unknown or empty falls back to the default rather than failing a render.
+
+    A typo in a persona's setting should cost the v2 experiment, not the day's
+    output — and the log line says which version actually ran.
+    """
+    value = (raw or "").strip().lower()
+    if value not in VERSIONS:
+        if value:
+            print(f"[graph] unknown workflow version {raw!r}, using {DEFAULT_VERSION}",
+                  file=sys.stderr, flush=True)
+        return DEFAULT_VERSION
+    return value
 
 # Titles carry the role. They are stable across re-export (ComfyUI keeps node
 # titles); ids are not.
@@ -120,10 +154,12 @@ def sanitise(graph: dict) -> dict:
     return graph
 
 
-def load(mode: str) -> dict:
+def load(mode: str, version: str = DEFAULT_VERSION) -> dict:
     if mode not in MODES:
         raise GraphError(f"unknown mode {mode!r}, expected one of {MODES}")
-    path = WORKFLOW_DIR / _FILES[mode]
+    if version not in VERSIONS:
+        raise GraphError(f"unknown version {version!r}, expected one of {VERSIONS}")
+    path = WORKFLOW_DIR / _FILES[(version, mode)]
     if not path.exists():
         raise GraphError(f"workflow missing: {path}")
     return sanitise(json.loads(path.read_text()))
@@ -199,9 +235,15 @@ def patch(
     description: str,
     gemini_api_key: str,
     seed: int | None = None,
+    version: str = DEFAULT_VERSION,
 ) -> dict:
-    """Return a job-ready copy of the graph. The template on disk is untouched."""
-    graph = copy.deepcopy(load(mode))
+    """Return a job-ready copy of the graph. The template on disk is untouched.
+
+    Every version is patched through this one path. A v2 graph that had lost the
+    {subject} placeholder, or its "Character lora" title, would fail here at job
+    start rather than quietly rendering a stranger.
+    """
+    graph = copy.deepcopy(load(mode, version))
 
     subject = ", ".join(p for p in (trigger_word.strip(), description.strip()) if p)
     if not subject:
