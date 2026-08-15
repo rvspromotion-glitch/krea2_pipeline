@@ -5,6 +5,7 @@
 #
 #   fetch_model.sh hf     <repo> <remote-path> <out>
 #   fetch_model.sh civit  <url>                <out>
+#   fetch_model.sh url    <url>                <out>   (no token, public link)
 #
 # Tokens come from BuildKit secrets (/run/secrets/...), never from build args —
 # an ARG is recorded in the layer history of the stage that declares it. They are
@@ -12,7 +13,7 @@
 # log is a bad place for a credential even a masked one.
 set -euo pipefail
 
-kind="${1:?hf|civit}"
+kind="${1:?hf|civit|url}"
 out="${!#}"
 mkdir -p "$(dirname "$out")"
 
@@ -140,6 +141,32 @@ PY
     http=$(curl -sSL --retry 8 --retry-delay 3 --retry-all-errors \
              -H "Authorization: Bearer ${token}" \
              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+             -w '%{http_code}' -o "$out" "$url") || http="000"
+    verify "$http"
+    ;;
+  url)
+    # A plain public link — no token, no signed-redirect dance. Used for weights
+    # that live somewhere other than HF or Civitai, currently the Klein style
+    # LoRA on Dropbox.
+    #
+    # verify() is what makes this safe to point at a file-sharing host: those
+    # serve an HTML preview page rather than a 404 when a link stops working,
+    # and verify rejects a body that opens with "<" instead of writing a
+    # plausible-looking file that fails at load time on the Sunday batch.
+    url="$2"
+    echo "[fetch] url $(basename "$out")"
+    if command -v aria2c >/dev/null 2>&1; then
+      if aria2c -x 16 -s 16 -k 1M --split=16 --min-split-size=1M \
+                --max-tries=5 --retry-wait=3 --connect-timeout=30 --timeout=60 \
+                --allow-overwrite=true --file-allocation=none \
+                --console-log-level=warn --summary-interval=0 \
+                -d "$(dirname "$out")" -o "$(basename "$out")" "$url"; then
+        verify 200
+        exit 0
+      fi
+      echo "[fetch] aria2 failed, falling back to curl"
+    fi
+    http=$(curl -sSL --retry 8 --retry-delay 3 --retry-all-errors \
              -w '%{http_code}' -o "$out" "$url") || http="000"
     verify "$http"
     ;;

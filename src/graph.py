@@ -35,7 +35,7 @@ MODES = ("single", "carousel")
 #
 # v1 stays the default. It is what has been rendering, and a version that has
 # to be asked for cannot become the default by accident.
-VERSIONS = ("v1", "v2", "v3")
+VERSIONS = ("v1", "v2", "v3", "v4")
 DEFAULT_VERSION = "v1"
 
 _FILES = {
@@ -45,6 +45,8 @@ _FILES = {
     ("v2", "carousel"): "carousel_v2.json",
     ("v3", "single"):   "single_photo_v3.json",
     ("v3", "carousel"): "carousel_v3.json",
+    ("v4", "single"):   "single_photo_v4.json",
+    ("v4", "carousel"): "carousel_v4.json",
 }
 
 
@@ -73,6 +75,12 @@ TITLE_CHARACTER_LORA = "Character lora"
 # does not, which is what lets one patch() serve all three versions.
 TITLE_PERSONA_REFERENCE = "Persona reference"
 TITLE_FLUX_CHARACTER_LORA = "Flux character lora"
+
+# v4 stacks a fixed style LoRA under the per-persona one on the Flux side. It is
+# the same file for every persona, so it is fetched with the shared weights and
+# is deliberately NOT a patch target — it only needs its own title so the
+# per-persona lookup stays unambiguous.
+TITLE_FLUX_STYLE_LORA = "Flux style LoRA"
 
 SUBJECT_PLACEHOLDER = "{subject}"
 

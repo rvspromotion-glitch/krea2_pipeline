@@ -54,6 +54,7 @@ while read -r kind a b c; do
   case "$kind" in
     hf)    repo="$a"; remote="$b"; rel="$c" ;;
     civit) url="$a";  rel="$b" ;;
+    url)   url="$a";  rel="$b" ;;
     *)     echo "[models] FATAL: unknown kind '${kind}' in ${LIST}" >&2; exit 1 ;;
   esac
 
@@ -75,7 +76,7 @@ while read -r kind a b c; do
   if [ "$kind" = "hf" ]; then
     "$FETCH_ONE" hf "$repo" "$remote" "$dest" >"$logfile" 2>&1 &
   else
-    "$FETCH_ONE" civit "$url" "$dest" >"$logfile" 2>&1 &
+    "$FETCH_ONE" "$kind" "$url" "$dest" >"$logfile" 2>&1 &
   fi
   pids+=($!); names+=("$name"); logs+=("$logfile"); wanted+=("$dest")
   queued=$((queued + 1))
