@@ -68,7 +68,7 @@ def _model_list() -> list[tuple[str, str]]:
         if not line or line.startswith("#"):
             continue
         parts = line.split()
-        expected = {"hf": 4, "civit": 3}.get(parts[0])
+        expected = {"hf": 4, "civit": 3, "url": 3}.get(parts[0])
         assert expected, f"models.txt:{number} unknown kind {parts[0]!r}"
         assert len(parts) == expected, f"models.txt:{number} wrong field count: {line}"
         rows.append((parts[0], parts[-1]))

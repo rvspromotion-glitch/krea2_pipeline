@@ -452,7 +452,9 @@ def _job_kwargs(version):
     kwargs = dict(image_filename="ref.png", lora_name="Chloe_v1.safetensors",
                   trigger_word="ch10e", description="young woman with red hair",
                   gemini_api_key="KEY", seed=7, version=version)
-    if version == "v3":
+    # Every version from v3 on renders through Flux as well as Krea2, so it
+    # needs the persona's photo and its own Klein LoRA.
+    if version in ("v3", "v4"):
         kwargs.update(persona_reference="chloe_face.png",
                       flux_lora_name="Chloe_klein.safetensors")
     return kwargs
@@ -719,3 +721,83 @@ def test_the_two_loras_do_not_cross_models(mode):
         else:
             assert graph_mod.TITLE_FLUX_CHARACTER_LORA not in chain, \
                 f"{nid} loads the Klein LoRA into Krea2"
+
+
+# ── v4 ───────────────────────────────────────────────────────────────────────
+#
+# v4 keeps v3's shape — Flux edits the scraped frame into the persona, Krea2
+# details it — and changes what conditions Krea2: the grounded encoders are
+# replaced by the KG reference stack, and a fixed style LoRA sits under the
+# per-persona one on the Flux side.
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v4_keeps_the_two_flux_loras_distinguishable(mode):
+    """Both arrived titled 'Flux character lora'. The patcher looks nodes up by
+    title, so an ambiguous one is refused rather than guessed — and guessing
+    would have written the persona's name over the shared style LoRA."""
+    graph = graph_mod.load(mode, "v4")
+
+    per_persona = [nid for nid, n in graph.items()
+                   if (n.get("_meta") or {}).get("title") == graph_mod.TITLE_FLUX_CHARACTER_LORA]
+    style = [nid for nid, n in graph.items()
+             if (n.get("_meta") or {}).get("title") == graph_mod.TITLE_FLUX_STYLE_LORA]
+
+    assert len(per_persona) == 1, f"ambiguous per-persona LoRA slot: {per_persona}"
+    assert len(style) == 1
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v4_does_not_overwrite_the_style_lora(mode):
+    """It is the same file for every persona and is fetched with the shared
+    weights, so a job must leave it alone."""
+    graph = graph_mod.patch(mode, **_job_kwargs("v4"))
+
+    style = [n for n in graph.values()
+             if (n.get("_meta") or {}).get("title") == graph_mod.TITLE_FLUX_STYLE_LORA][0]
+    assert style["inputs"]["lora_name"] == "klein_snofs_v1_4.safetensors"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v4_stacks_the_style_lora_under_the_character_lora(mode):
+    """Order matters: the character LoRA has to be the last word on identity."""
+    graph = graph_mod.load(mode, "v4")
+
+    flux_samplers = [nid for nid, n in graph.items()
+                     if n["class_type"] == "KSampler"
+                     and (n.get("_meta") or {}).get("title", "").startswith("FLUX")]
+    assert flux_samplers
+
+    for nid in flux_samplers:
+        chain = _model_chain(graph, graph[nid]["inputs"]["model"][0])
+        assert graph_mod.TITLE_FLUX_CHARACTER_LORA in chain, nid
+        assert graph_mod.TITLE_FLUX_STYLE_LORA in chain, nid
+        assert chain.index(graph_mod.TITLE_FLUX_CHARACTER_LORA) < \
+               chain.index(graph_mod.TITLE_FLUX_STYLE_LORA), \
+               f"{nid}: the style LoRA is applied after the character LoRA"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v4_krea2_samplers_still_carry_the_krea2_character_lora(mode):
+    graph = graph_mod.load(mode, "v4")
+
+    for nid, node in graph.items():
+        if node["class_type"] != "KSampler":
+            continue
+        if (node.get("_meta") or {}).get("title", "").startswith("FLUX"):
+            continue
+        chain = _model_chain(graph, node["inputs"]["model"][0])
+        assert graph_mod.TITLE_CHARACTER_LORA in chain, f"{nid}: {chain}"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v4_sampler_titles_match_their_denoise(mode):
+    """The handed-over graphs said 0.40 while running 0.85 — a title that lies
+    about the number is worse than no title when tuning."""
+    graph = graph_mod.load(mode, "v4")
+
+    for nid, node in graph.items():
+        title = (node.get("_meta") or {}).get("title", "")
+        if node["class_type"] != "KSampler" or "denoise" not in title:
+            continue
+        stated = title.split("denoise")[1].strip(" )")
+        assert float(stated) == float(node["inputs"]["denoise"]), f"{nid}: {title}"
