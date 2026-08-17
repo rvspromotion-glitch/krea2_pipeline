@@ -35,7 +35,7 @@ MODES = ("single", "carousel")
 #
 # v1 stays the default. It is what has been rendering, and a version that has
 # to be asked for cannot become the default by accident.
-VERSIONS = ("v1", "v2", "v3", "v4")
+VERSIONS = ("v1", "v2", "v3", "v4", "v5")
 DEFAULT_VERSION = "v1"
 
 _FILES = {
@@ -47,6 +47,12 @@ _FILES = {
     ("v3", "carousel"): "carousel_v3.json",
     ("v4", "single"):   "single_photo_v4.json",
     ("v4", "carousel"): "carousel_v4.json",
+    # v5 replaces the hero's Krea2 detail pass with a KSamplerAdvanced that
+    # starts partway through its schedule, and lifts the identity-edit LoRA.
+    # Its carousel is v4's with that one change at the front — the slide chain
+    # after the hero is untouched.
+    ("v5", "single"):   "single_photo_v5.json",
+    ("v5", "carousel"): "carousel_v5.json",
 }
 
 
