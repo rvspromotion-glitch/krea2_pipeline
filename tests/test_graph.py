@@ -448,13 +448,16 @@ def test_the_flux_models_are_loaded_by_the_expected_node_types(mode):
 
 
 def _job_kwargs(version):
-    """The job variables every version takes, plus the two only v3 has."""
+    """The job variables every version takes, plus the two v3 introduced."""
     kwargs = dict(image_filename="ref.png", lora_name="Chloe_v1.safetensors",
                   trigger_word="ch10e", description="young woman with red hair",
                   gemini_api_key="KEY", seed=7, version=version)
     # Every version from v3 on renders through Flux as well as Krea2, so it
-    # needs the persona's photo and its own Klein LoRA.
-    if version in ("v3", "v4"):
+    # needs the persona's photo and its own Klein LoRA. Keyed off the graph
+    # rather than a list of versions, so adding a version cannot leave this
+    # behind — which is exactly what happened when v5 arrived.
+    graph = graph_mod.load("single", version)
+    if graph_mod._optional_by_title(graph, graph_mod.TITLE_PERSONA_REFERENCE):
         kwargs.update(persona_reference="chloe_face.png",
                       flux_lora_name="Chloe_klein.safetensors")
     return kwargs
@@ -801,3 +804,124 @@ def test_v4_sampler_titles_match_their_denoise(mode):
             continue
         stated = title.split("denoise")[1].strip(" )")
         assert float(stated) == float(node["inputs"]["denoise"]), f"{nid}: {title}"
+
+
+# ── v5 ───────────────────────────────────────────────────────────────────────
+#
+# v5 is v4 with one change at the front: the hero's Krea2 detail pass becomes a
+# KSamplerAdvanced that joins its schedule partway through instead of a KSampler
+# at denoise 0.85, and the identity-edit LoRA comes up. Its carousel is the same
+# change on the same hero — everything after the hero decode is v4's slide
+# chain, untouched. That last part is the whole reason this section exists: the
+# tempting way to build the carousel is to re-export the whole thing, and then
+# the slides drift from v4 for reasons nobody meant.
+
+def _v5(mode):
+    return graph_mod.load(mode, "v5")
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v5_replaces_the_hero_detail_pass_with_an_advanced_sampler(mode):
+    graph = _v5(mode)
+
+    advanced = [nid for nid, n in graph.items()
+                if n["class_type"] == "KSamplerAdvanced"]
+    assert len(advanced) == 1, f"expected one KSamplerAdvanced, got {advanced}"
+
+    node = graph[advanced[0]]
+    # Starting partway through the schedule is what replaces a denoise figure.
+    assert 0 < node["inputs"]["start_at_step"] < node["inputs"]["steps"]
+
+    # And the hero's old fixed-denoise pass is gone. Only the hero's: the
+    # carousel's three slides keep their own detail passes at 0.8, because v5
+    # changes the start of the carousel and nothing after it.
+    hero_detail = [nid for nid, n in graph.items()
+                   if n["class_type"] == "KSampler"
+                   and (n.get("_meta") or {}).get("title", "")
+                   == "KREA2: detail pass (denoise 0.85)"]
+    assert hero_detail == [], f"v4's hero detail pass survived: {hero_detail}"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v5_settle_pass_reads_the_advanced_sampler(mode):
+    """The join. Left pointing at the deleted node the graph would not load at
+    all; left pointing at the source encode it would settle an unrendered
+    frame, which looks like a soft render rather than a broken one."""
+    graph = _v5(mode)
+
+    settle = [nid for nid, n in graph.items()
+              if (n.get("_meta") or {}).get("title", "").startswith("KREA2: settle")]
+    assert len(settle) == 1
+
+    upstream = graph[settle[0]]["inputs"]["latent_image"][0]
+    assert graph[upstream]["class_type"] == "KSamplerAdvanced"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v5_advanced_sampler_carries_the_character_lora(mode):
+    """It runs off the character LoRA rather than the edit patch, which is the
+    point of the change — but it must still be the persona's LoRA, or the hero
+    comes back as somebody else."""
+    graph = _v5(mode)
+
+    advanced = [nid for nid, n in graph.items()
+                if n["class_type"] == "KSamplerAdvanced"][0]
+    chain = _model_chain(graph, graph[advanced]["inputs"]["model"][0])
+    assert graph_mod.TITLE_CHARACTER_LORA in chain, chain
+
+
+def test_v5_carousel_is_v4s_slide_chain_behind_the_new_hero():
+    """The requirement in one assertion: only the hero changed.
+
+    Everything from the hero decode onwards — the Gemini call that writes the
+    slide instructions, the three Flux slides, their Krea2 passes, the batch —
+    must be exactly what v4 ships. If a re-export ever drifts one of them this
+    fails and names it.
+    """
+    import json
+
+    v4 = graph_mod.load("carousel", "v4")
+    v5 = graph_mod.load("carousel", "v5")
+
+    # The hero half, which is allowed to differ.
+    hero = {"2314", "3094", "2346", "1033", "3013", "2313"}
+    drifted = []
+    for nid in set(v4) | set(v5):
+        if nid in hero:
+            continue
+        a = json.dumps(v4.get(nid), sort_keys=True)
+        b = json.dumps(v5.get(nid), sort_keys=True)
+        if a != b:
+            title = ((v5.get(nid) or v4.get(nid) or {}).get("_meta") or {}).get("title")
+            drifted.append(f"{nid} ({title})")
+    # Seeds are randomised per job, so an exported difference in one is noise.
+    drifted = [d for d in drifted if "seed" not in d.lower()]
+    assert drifted == [], f"the slide chain drifted from v4: {drifted}"
+
+
+def test_v5_carousel_hero_matches_v5_single():
+    """Same hero, both modes — the carousel starts with the single and carries
+    on. A hero that differs between them means tuning one does not move the
+    other, which is the thing versioning is supposed to prevent."""
+    single = graph_mod.load("single", "v5")
+    carousel = graph_mod.load("carousel", "v5")
+
+    for nid in ("3094", "2346", "1033", "3013", "2313", "3016"):
+        a, b = single[nid]["inputs"], carousel[nid]["inputs"]
+        for field, value in a.items():
+            if "seed" in field or isinstance(value, list):
+                continue          # seeds are per-job; links are per-graph
+            assert b.get(field) == value, f"{nid}.{field}: {b.get(field)} != {value}"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v5_prompt_template_still_takes_a_subject(mode):
+    """The export bakes in whichever persona was loaded in ComfyUI. Without the
+    placeholder back, build() would refuse the job — better than rendering a
+    stranger, but still a broken version."""
+    graph = _v5(mode)
+
+    templates = [n["inputs"]["value"] for n in graph.values()
+                 if n["class_type"] == "PrimitiveStringMultiline"]
+    assert any(graph_mod.SUBJECT_PLACEHOLDER in t for t in templates)
+    assert not any("3lm1ra" in t for t in templates), "a persona is baked in"
