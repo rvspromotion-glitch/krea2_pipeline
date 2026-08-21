@@ -1,0 +1,860 @@
+{
+  "56": {
+    "inputs": {
+      "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "57": {
+    "inputs": {
+      "vae_name": "Wan2_1_VAE_fp32.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "1030": {
+    "inputs": {
+      "image": "dulci_nea777_post_11_7_2024_5_16_58 AM3495809742351444176.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Input image"
+    }
+  },
+  "1033": {
+    "inputs": {
+      "lora_name": "Lenovo_ultrareal.safetensors",
+      "strength_model": 0.85,
+      "model": [
+        "2311",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "EDIT: identity-edit LoRA"
+    }
+  },
+  "1034": {
+    "inputs": {
+      "lora_name": "Eva_step-002750_identity.safetensors",
+      "strength_model": 1,
+      "model": [
+        "1033",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Character lora"
+    }
+  },
+  "2309": {
+    "inputs": {
+      "ckpt_name": "AiO_krea2_checkpoint_int8_8steps.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "2311": {
+    "inputs": {
+      "sage_attention": "disabled",
+      "allow_compile": false,
+      "model": [
+        "2309",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "2312": {
+    "inputs": {
+      "prompt": "Describe this image in great detail for use as an image generation prompt.",
+      "safety_settings": "BLOCK_NONE",
+      "response_type": "text",
+      "model": "gemini-3.1-flash-lite-preview",
+      "api_key": "",
+      "proxy": "",
+      "system_instruction": [
+        "2313",
+        0
+      ],
+      "seed": 145076765,
+      "temperature": 0.15,
+      "num_predict": 1000,
+      "images": [
+        "2348",
+        0
+      ]
+    },
+    "class_type": "Ask_Gemini_Batch",
+    "_meta": {
+      "title": "Ask Gemini (Batch)"
+    }
+  },
+  "2313": {
+    "inputs": {
+      "value": "You are a shot director for a photo for social media. You receive the anchor photo. Write exactly what you see. Make sure to focus on onlyfans content creation e.g. focus on ass out/ tits focussed. pick either one. try to stay close to the original pose of the reference image.\n\nStarting with \"Replace the woman in the first image with {subject}, the woman in image 2, keeping her face and body exactly as they are in that reference. Keep the pose, framing, outfit, room and lighting of the first image. Smooth clear skin, clean nose, lips, eyebrows, face, navel and body,\". ONLY MENTION IF VISIBLE: Name the pose concretely: where her hands are, where her weight sits, which way her hips and shoulders turn, where she looks, the mouth shape in the reference image, and where the camera sits compared to the anchor. (only mention things that are visible)\n\nDescribe each part of the photo: same outfit, same room, same light. describe the background in detail.\n\nIF there is any text, write it out, otherwise make sure the text is removed from the prompt (e.g. a bottle with text should have nothing on it, a blank bottle, but a shirt or outfit with text should write it out)\n\nNever mention tattoos, never mention piercings (unless earings)\n\nONLY IF there is a phone visible in the reference image, its always a white iphone 16 with apple logo, NO PHONE IS NO MENTION OF A PHONE.\n\nIF its a mirror selfie, explain the reflection the composition in detail.\n\nWrite only positive statements about what is present in each shot.\n\nOutput nothing else. Zero headings, zero numbering, zero commentary."
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "T2I Prompt template"
+    }
+  },
+  "2318": {
+    "inputs": {
+      "samples": [
+        "2346",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "decode panel 3"
+    }
+  },
+  "2346": {
+    "inputs": {
+      "seed": 536263570050362,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "bong_tangent",
+      "denoise": 0.2,
+      "model": [
+        "1034",
+        0
+      ],
+      "positive": [
+        "3014",
+        0
+      ],
+      "negative": [
+        "3105",
+        0
+      ],
+      "latent_image": [
+        "3094",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KREA2: settle pass (denoise 0.20)"
+    }
+  },
+  "2348": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "1030",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale Image to Total Pixels"
+    }
+  },
+  "2399": {
+    "inputs": {
+      "value": 1440
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Width"
+    }
+  },
+  "2400": {
+    "inputs": {
+      "value": 1920
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Height"
+    }
+  },
+  "2404": {
+    "inputs": {
+      "image": [
+        "3007",
+        0
+      ]
+    },
+    "class_type": "GetImageSizeAndCount",
+    "_meta": {
+      "title": "Get Image Size & Count"
+    }
+  },
+  "2422": {
+    "inputs": {
+      "recipe": "custom",
+      "jpeg_quality": 92,
+      "passes": 1,
+      "noise_scale": 0,
+      "sharpness": 0.9,
+      "contrast": 1,
+      "posterize_bits": 8,
+      "blur_radius": 0.2,
+      "pixelate_box": 1,
+      "invert": false,
+      "grayscale": false,
+      "emboss": false,
+      "edge_enhance": false,
+      "seed": 335604058925056,
+      "image": [
+        "3106",
+        0
+      ]
+    },
+    "class_type": "MoreJPEG",
+    "_meta": {
+      "title": "Realisim Enhancor"
+    }
+  },
+  "2434": {
+    "inputs": {
+      "seed": 216173664073770,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "res_2s",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "3004",
+        0
+      ],
+      "positive": [
+        "3099",
+        0
+      ],
+      "negative": [
+        "2452",
+        0
+      ],
+      "latent_image": [
+        "2454",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "FLUX: generate"
+    }
+  },
+  "2435": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "2436": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "2437": {
+    "inputs": {
+      "unet_name": "Flux2-Klein-9B-True-V3-int8mixedrow.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "2438": {
+    "inputs": {
+      "text": [
+        "3104",
+        0
+      ],
+      "clip": [
+        "2436",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "2440": {
+    "inputs": {
+      "pixels": [
+        "3007",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "2442": {
+    "inputs": {
+      "samples": [
+        "2434",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "2444": {
+    "inputs": {
+      "pixels": [
+        "3095",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "2451": {
+    "inputs": {
+      "conditioning": [
+        "2438",
+        0
+      ],
+      "latent": [
+        "2440",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Set Reference Latent"
+    }
+  },
+  "2452": {
+    "inputs": {
+      "conditioning": [
+        "2453",
+        0
+      ],
+      "latent": [
+        "2440",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Set Reference Latent"
+    }
+  },
+  "2453": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "2436",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "2454": {
+    "inputs": {
+      "width": [
+        "2404",
+        1
+      ],
+      "height": [
+        "2404",
+        2
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "3001": {
+    "inputs": {
+      "image": "ComfyUI_00053_.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Persona reference"
+    }
+  },
+  "3002": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "3001",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale persona reference"
+    }
+  },
+  "3003": {
+    "inputs": {
+      "pixels": [
+        "3002",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "FLUX: encode persona reference"
+    }
+  },
+  "3004": {
+    "inputs": {
+      "lora_name": "3lm1ra_flux_klein_9B_000002250.safetensors",
+      "strength_model": 0.85,
+      "model": [
+        "3085",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Flux character lora"
+    }
+  },
+  "3005": {
+    "inputs": {
+      "conditioning": [
+        "2451",
+        0
+      ],
+      "latent": [
+        "3003",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "FLUX: reference 2 (persona identity)"
+    }
+  },
+  "3007": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "2402:139",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale Image to Total Pixels"
+    }
+  },
+  "3008": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": [
+        "2399",
+        0
+      ],
+      "height": [
+        "2400",
+        0
+      ],
+      "crop": "center",
+      "image": [
+        "2442",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Upscale Image"
+    }
+  },
+  "3012": {
+    "inputs": {
+      "sage_attention": "disabled",
+      "allow_compile": false,
+      "model": [
+        "2437",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "3013": {
+    "inputs": {
+      "How strongly this image guides": 0.4,
+      "Use image for": "match the scene light",
+      "Manual mode borrows": "overall image",
+      "Prepare image by": "use image as-is",
+      "Color kept": 1,
+      "Small details kept": 1,
+      "Study this image at": "use stack setting",
+      "Frame this reference by": "use stack setting",
+      "Subject copying": "recipe decides",
+      "Early layout guidance": 1,
+      "Final detail copying": 1,
+      "Maximum image pull": 3,
+      "Shape copied": 1,
+      "Overall style reach": 1,
+      "Guide direction": "toward this image",
+      "When this card guides": "recipe decides",
+      "Structure layers pull": 1,
+      "Finish layers pull": 1,
+      "Reference image": [
+        "3097",
+        0
+      ]
+    },
+    "class_type": "KGKrea2ImageGuideCardV10",
+    "_meta": {
+      "title": "KG Krea 2 Image Guide Card V10"
+    }
+  },
+  "3014": {
+    "inputs": {
+      "Final image prompt": [
+        "2312",
+        0
+      ],
+      "Written prompt strength": 1,
+      "Image slider feel": "artist friendly - soft at low values",
+      "Image detail level": "low - loose idea (256)",
+      "Image framing": "keep full image shape",
+      "When images guide": "smart per-card timing",
+      "Early-to-final handoff": 0.4,
+      "Text/logo guard prompt handling": "gentle guard - keep my prompt words",
+      "Balance strong cards": "off - use my values",
+      "Reuse image studies": "reuse between runs - faster tuning",
+      "Krea CLIP": [
+        "56",
+        0
+      ],
+      "Reference 1 guide card": [
+        "3013",
+        0
+      ]
+    },
+    "class_type": "KGTextEncodeKreaImageReferencesV10",
+    "_meta": {
+      "title": "KG Krea 2 Reference Stack Encoder V10"
+    }
+  },
+  "3015": {
+    "inputs": {
+      "Final image prompt": "",
+      "Written prompt strength": 1,
+      "Image slider feel": "artist friendly - soft at low values",
+      "Image detail level": "low - loose idea (256)",
+      "Image framing": "keep full image shape",
+      "When images guide": "smart per-card timing",
+      "Early-to-final handoff": 0.4,
+      "Text/logo guard prompt handling": "gentle guard - keep my prompt words",
+      "Balance strong cards": "off - use my values",
+      "Reuse image studies": "reuse between runs - faster tuning",
+      "Krea CLIP": [
+        "56",
+        0
+      ],
+      "Reference 1 guide card": [
+        "3013",
+        0
+      ]
+    },
+    "class_type": "KGTextEncodeKreaImageReferencesV10",
+    "_meta": {
+      "title": "KG Krea 2 Reference Stack Encoder V10"
+    }
+  },
+  "3065": {
+    "inputs": {
+      "filename_prefix": "Krea2_turbo",
+      "images": [
+        "2422",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "3085": {
+    "inputs": {
+      "lora_name": "klein_snofs_v1_4.safetensors",
+      "strength_model": 0.45,
+      "model": [
+        "3012",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Flux style LoRA"
+    }
+  },
+  "3094": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 456649360676598,
+      "steps": 11,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "start_at_step": 6,
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "1034",
+        0
+      ],
+      "positive": [
+        "3014",
+        0
+      ],
+      "negative": [
+        "3105",
+        0
+      ],
+      "latent_image": [
+        "2444",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "Sampler I2I"
+    }
+  },
+  "3095": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "scale_by": 2,
+      "image": [
+        "3008",
+        0
+      ]
+    },
+    "class_type": "ImageScaleBy",
+    "_meta": {
+      "title": "Upscale Image By"
+    }
+  },
+  "3097": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "scale_by": 2,
+      "image": [
+        "2402:139",
+        0
+      ]
+    },
+    "class_type": "ImageScaleBy",
+    "_meta": {
+      "title": "Upscale Image By"
+    }
+  },
+  "3099": {
+    "inputs": {
+      "guidance": 4,
+      "conditioning": [
+        "3005",
+        0
+      ]
+    },
+    "class_type": "FluxGuidance",
+    "_meta": {
+      "title": "FluxGuidance"
+    }
+  },
+  "3101": {
+    "inputs": {
+      "prompt": "Describe the clothing worn in this image, start the sentence with \"she wears, [description here]\"",
+      "safety_settings": "BLOCK_NONE",
+      "response_type": "text",
+      "model": "gemini-3.1-flash-lite-preview",
+      "api_key": "",
+      "proxy": "",
+      "system_instruction": "",
+      "seed": 428269956,
+      "temperature": 0.2,
+      "num_predict": 512,
+      "images": [
+        "2348",
+        0
+      ]
+    },
+    "class_type": "Ask_Gemini_Batch",
+    "_meta": {
+      "title": "Ask Gemini (Batch)"
+    }
+  },
+  "3102": {
+    "inputs": {
+      "string_a": "Replace the character in image 1 with {subject}, she has no tattoo's or piercings so she has a clean skin",
+      "string_b": [
+        "3101",
+        0
+      ],
+      "delimiter": ", "
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate Text"
+    }
+  },
+  "3103": {
+    "inputs": {
+      "string_a": [
+        "3102",
+        0
+      ],
+      "string_b": ", ",
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate Text"
+    }
+  },
+  "3104": {
+    "inputs": {
+      "string_a": [
+        "3103",
+        0
+      ],
+      "string_b": "keep the pose and image composition exactly as is in image 1, only swap the character. The image has no watermarks",
+      "delimiter": ", "
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate Text"
+    }
+  },
+  "3105": {
+    "inputs": {
+      "conditioning": [
+        "3015",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Conditioning Zero Out"
+    }
+  },
+  "3106": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": [
+        "2399",
+        0
+      ],
+      "height": [
+        "2400",
+        0
+      ],
+      "crop": "center",
+      "image": [
+        "2318",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Upscale Image"
+    }
+  },
+  "3107": {
+    "inputs": {
+      "lora_name": "krea2_identity_edit_v1_2.safetensors",
+      "strength_model": 1,
+      "model": [
+        "1034",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "POV for carousel"
+    }
+  },
+  "2402:139": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": [
+        "2399",
+        0
+      ],
+      "height": [
+        "2400",
+        0
+      ],
+      "crop": "center",
+      "image": [
+        "1030",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Upscale Image"
+    }
+  }
+}

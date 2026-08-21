@@ -925,3 +925,169 @@ def test_v5_prompt_template_still_takes_a_subject(mode):
                  if n["class_type"] == "PrimitiveStringMultiline"]
     assert any(graph_mod.SUBJECT_PLACEHOLDER in t for t in templates)
     assert not any("3lm1ra" in t for t in templates), "a persona is baked in"
+
+
+# ── v6 ───────────────────────────────────────────────────────────────────────
+#
+# v6 drops the Krea2 edit patch from the hero, supersamples it (render at 2x,
+# bring it back down before the compression pass), and gives Flux its own short
+# prompt built from a second Gemini call rather than the full shot-director
+# description Krea2 reads. That last change is the one with teeth: it puts the
+# persona in a *second* place, in a node type the patcher did not used to walk.
+
+def _v6(mode):
+    return graph_mod.load(mode, "v6")
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v6_gives_flux_its_own_prompt_and_still_names_the_persona(mode):
+    """The failure this guards is silent, not loud. With the placeholder left
+    unsubstituted Flux is handed the literal text "{subject}", the character
+    LoRA has no trigger word to anchor on, and the render comes back plausible
+    with a weaker identity swap — nothing raises, nothing logs."""
+    graph = graph_mod.patch(mode, **_job_kwargs("v6"))
+
+    flux_prompt = graph["3102"]["inputs"]["string_a"]
+    assert graph_mod.SUBJECT_PLACEHOLDER not in flux_prompt
+    assert "ch10e" in flux_prompt, "the trigger word never reached Flux"
+    assert "red hair" in flux_prompt, "the description never reached Flux"
+
+    # And it is a different prompt from the one Krea2 reads.
+    assert graph["2438"]["inputs"]["text"][0] == "3104"
+    assert graph["3014"]["inputs"]["Final image prompt"][0] == "2312"
+
+
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_v6_supersamples_the_hero(mode):
+    """Rendered at 2x and brought back down, which is a quality technique and
+    also four times the latent area through both hero samplers."""
+    graph = _v6(mode)
+
+    upscale = graph[graph["2444"]["inputs"]["pixels"][0]]
+    assert upscale["class_type"] == "ImageScaleBy"
+    assert upscale["inputs"]["scale_by"] == 2
+
+    # The guide card has to be looking at the same scale as the sampler.
+    card = graph["3013"]["inputs"]["Reference image"][0]
+    assert graph[card]["class_type"] == "ImageScaleBy"
+
+
+def test_v6_single_shrinks_before_the_compression_pass():
+    """MoreJPEG exists to add believable compression texture. Downscaling
+    afterwards resamples most of that character straight back out, so the
+    order is decode -> shrink -> compress -> save."""
+    graph = _v6("single")
+
+    save = graph_mod.output_node(graph)
+    compress = graph[save]["inputs"]["images"][0]
+    assert graph[compress]["class_type"] == "MoreJPEG"
+
+    shrink = graph[compress]["inputs"]["image"][0]
+    assert graph[shrink]["class_type"] == "ImageScale"
+    assert graph[graph[shrink]["inputs"]["image"][0]]["class_type"] == "VAEDecode"
+
+    # Back to the published size, not the supersampled one.
+    assert graph[shrink]["inputs"]["width"] == ["2399", 0]
+    assert graph[shrink]["inputs"]["height"] == ["2400", 0]
+
+
+def test_v6_hero_no_longer_runs_through_the_krea2_edit_patch():
+    graph = _v6("single")
+    settle = graph["2346"]["inputs"]["model"][0]
+    chain = _model_chain(graph, settle)
+    assert graph_mod.TITLE_CHARACTER_LORA in chain
+    assert not [n for n in graph.values() if n["class_type"] == "Krea2EditModelPatch"]
+
+
+def test_v6_carousel_keeps_the_pov_lora_its_slides_need():
+    """The hero stopped loading it; the three slide patches still require it.
+    3107 is the same file at the same strength in the same place in the chain,
+    so the slides are unchanged rather than merely similar."""
+    graph = _v6("carousel")
+
+    assert graph["3107"]["inputs"]["model"] == ["1034", 0]
+    for slide in ("3050", "3051", "3052"):
+        assert graph[slide]["inputs"]["model"] == ["3107", 0]
+
+    v5 = graph_mod.load("carousel", "v5")
+    assert (graph["3107"]["inputs"]["lora_name"] == v5["2305"]["inputs"]["lora_name"])
+    assert (graph["3107"]["inputs"]["strength_model"]
+            == v5["2305"]["inputs"]["strength_model"])
+
+
+def test_v6_carousel_is_v5s_slide_chain_behind_the_new_hero():
+    """Only the hero changed. Anything the hero does not own must be exactly
+    what v5 ships, so a re-export cannot drift the slides by accident."""
+    import json
+
+    # Whatever *either* hero owns, including the nodes v6 deleted — v5's edit
+    # patch and its source encode are hero parts, not slide parts.
+    hero = set(_v6("single")) | set(graph_mod.load("single", "v5"))
+    v5 = graph_mod.load("carousel", "v5")
+    v6 = _v6("carousel")
+
+    # The POV LoRA moved id, so its three consumers point somewhere new. That
+    # is the whole allowed difference outside the hero.
+    repointed = {"3050", "3051", "3052"}
+
+    drifted = []
+    for nid in (set(v5) | set(v6)) - hero - repointed:
+        if json.dumps(v5.get(nid), sort_keys=True) != json.dumps(v6.get(nid), sort_keys=True):
+            title = ((v6.get(nid) or v5.get(nid) or {}).get("_meta") or {}).get("title")
+            drifted.append(f"{nid} ({title})")
+    assert drifted == [], f"the slide chain drifted from v5: {drifted}"
+
+    # And the repointed three differ in exactly one field.
+    for nid in repointed:
+        before = dict(v5[nid]["inputs"]); after = dict(v6[nid]["inputs"])
+        assert before.pop("model") != after.pop("model")
+        assert before == after
+
+
+def test_v6_carousel_hero_matches_the_single():
+    """Tuning one has to move the other. The single's extra downscale is the
+    one exception — the carousel already brings the hero back to size in 3019,
+    on its way to the slides."""
+    single = _v6("single")
+    carousel = _v6("carousel")
+
+    assert "3106" in single and "3106" not in carousel
+    for nid in set(single) - {"3106", "3065"}:
+        assert nid in carousel, f"{nid} missing from the carousel hero"
+        a, b = single[nid]["inputs"], carousel[nid]["inputs"]
+        for field, value in a.items():
+            if "seed" in field or field == "image" and nid == "2422":
+                continue
+            assert b.get(field) == value, f"{nid}.{field}: {b.get(field)} != {value}"
+
+
+# ── Every version, every mode ────────────────────────────────────────────────
+
+@pytest.mark.parametrize("version", graph_mod.VERSIONS)
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_no_placeholder_survives_a_patch(mode, version):
+    """A leftover {subject} does not raise anywhere — it just goes to the model
+    as literal text. Checked across every version so the next export cannot
+    reintroduce it in a node type nobody thought about."""
+    graph = graph_mod.patch(mode, **_job_kwargs(version))
+
+    left = [f"{nid}.{field}" for nid, node in graph.items()
+            for field, value in node["inputs"].items()
+            if isinstance(value, str) and graph_mod.SUBJECT_PLACEHOLDER in value]
+    assert left == [], f"unsubstituted placeholder in {left}"
+
+
+@pytest.mark.parametrize("version", graph_mod.VERSIONS)
+@pytest.mark.parametrize("mode", graph_mod.MODES)
+def test_no_persona_is_baked_into_a_prompt(mode, version):
+    """Exports come out of ComfyUI with whichever persona was loaded written
+    into them. build() substitutes the placeholder; it cannot rescue a prompt
+    where the name was typed in directly."""
+    graph = graph_mod.load(mode, version)
+
+    baked = [f"{nid}.{field}" for nid, node in graph.items()
+             if node["class_type"] in graph_mod.SUBJECT_NODE_TYPES
+             for field, value in node["inputs"].items()
+             if isinstance(value, str)
+             and any(name in value for name in ("3lm1ra", "Eva", "Chloe", "ch10e"))]
+    assert baked == [], f"a persona is written into {baked}"

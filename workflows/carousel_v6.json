@@ -1,0 +1,1974 @@
+{
+  "56": {
+    "inputs": {
+      "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "57": {
+    "inputs": {
+      "vae_name": "Wan2_1_VAE_fp32.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "1030": {
+    "inputs": {
+      "image": "dulci_nea777_post_11_7_2024_5_16_58 AM3495809742351444176.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Input image"
+    }
+  },
+  "1033": {
+    "inputs": {
+      "lora_name": "Lenovo_ultrareal.safetensors",
+      "strength_model": 0.85,
+      "model": [
+        "2311",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "EDIT: identity-edit LoRA"
+    }
+  },
+  "1034": {
+    "inputs": {
+      "lora_name": "Eva_step-002750_identity.safetensors",
+      "strength_model": 1,
+      "model": [
+        "1033",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Character lora"
+    }
+  },
+  "2309": {
+    "inputs": {
+      "ckpt_name": "AiO_krea2_checkpoint_int8_8steps.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "2311": {
+    "inputs": {
+      "sage_attention": "disabled",
+      "allow_compile": false,
+      "model": [
+        "2309",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "2312": {
+    "inputs": {
+      "prompt": "Describe this image in great detail for use as an image generation prompt.",
+      "safety_settings": "BLOCK_NONE",
+      "response_type": "text",
+      "model": "gemini-3.1-flash-lite-preview",
+      "api_key": "",
+      "proxy": "",
+      "system_instruction": [
+        "2313",
+        0
+      ],
+      "seed": 145076765,
+      "temperature": 0.15,
+      "num_predict": 1000,
+      "images": [
+        "2348",
+        0
+      ]
+    },
+    "class_type": "Ask_Gemini_Batch",
+    "_meta": {
+      "title": "Ask Gemini (Batch)"
+    }
+  },
+  "2313": {
+    "inputs": {
+      "value": "You are a shot director for a photo for social media. You receive the anchor photo. Write exactly what you see. Make sure to focus on onlyfans content creation e.g. focus on ass out/ tits focussed. pick either one. try to stay close to the original pose of the reference image.\n\nStarting with \"Replace the woman in the first image with {subject}, the woman in image 2, keeping her face and body exactly as they are in that reference. Keep the pose, framing, outfit, room and lighting of the first image. Smooth clear skin, clean nose, lips, eyebrows, face, navel and body,\". ONLY MENTION IF VISIBLE: Name the pose concretely: where her hands are, where her weight sits, which way her hips and shoulders turn, where she looks, the mouth shape in the reference image, and where the camera sits compared to the anchor. (only mention things that are visible)\n\nDescribe each part of the photo: same outfit, same room, same light. describe the background in detail.\n\nIF there is any text, write it out, otherwise make sure the text is removed from the prompt (e.g. a bottle with text should have nothing on it, a blank bottle, but a shirt or outfit with text should write it out)\n\nNever mention tattoos, never mention piercings (unless earings)\n\nONLY IF there is a phone visible in the reference image, its always a white iphone 16 with apple logo, NO PHONE IS NO MENTION OF A PHONE.\n\nIF its a mirror selfie, explain the reflection the composition in detail.\n\nWrite only positive statements about what is present in each shot.\n\nOutput nothing else. Zero headings, zero numbering, zero commentary."
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "T2I Prompt template"
+    }
+  },
+  "2318": {
+    "inputs": {
+      "samples": [
+        "2346",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "decode panel 3"
+    }
+  },
+  "2346": {
+    "inputs": {
+      "seed": 536263570050362,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "bong_tangent",
+      "denoise": 0.2,
+      "model": [
+        "1034",
+        0
+      ],
+      "positive": [
+        "3014",
+        0
+      ],
+      "negative": [
+        "3105",
+        0
+      ],
+      "latent_image": [
+        "3094",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KREA2: settle pass (denoise 0.20)"
+    }
+  },
+  "2348": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "1030",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale Image to Total Pixels"
+    }
+  },
+  "2399": {
+    "inputs": {
+      "value": 1440
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Width"
+    }
+  },
+  "2400": {
+    "inputs": {
+      "value": 1920
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Height"
+    }
+  },
+  "2404": {
+    "inputs": {
+      "image": [
+        "3007",
+        0
+      ]
+    },
+    "class_type": "GetImageSizeAndCount",
+    "_meta": {
+      "title": "Get Image Size & Count"
+    }
+  },
+  "2422": {
+    "inputs": {
+      "recipe": "custom",
+      "jpeg_quality": 92,
+      "passes": 1,
+      "noise_scale": 0,
+      "sharpness": 0.9,
+      "contrast": 1,
+      "posterize_bits": 8,
+      "blur_radius": 0.2,
+      "pixelate_box": 1,
+      "invert": false,
+      "grayscale": false,
+      "emboss": false,
+      "edge_enhance": false,
+      "seed": 335604058925056,
+      "image": [
+        "3064",
+        0
+      ]
+    },
+    "class_type": "MoreJPEG",
+    "_meta": {
+      "title": "Realisim Enhancor"
+    }
+  },
+  "2434": {
+    "inputs": {
+      "seed": 216173664073770,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "res_2s",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "3004",
+        0
+      ],
+      "positive": [
+        "3099",
+        0
+      ],
+      "negative": [
+        "2452",
+        0
+      ],
+      "latent_image": [
+        "2454",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "FLUX: generate"
+    }
+  },
+  "2435": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "2436": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "2437": {
+    "inputs": {
+      "unet_name": "Flux2-Klein-9B-True-V3-int8mixedrow.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "2438": {
+    "inputs": {
+      "text": [
+        "3104",
+        0
+      ],
+      "clip": [
+        "2436",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "2440": {
+    "inputs": {
+      "pixels": [
+        "3007",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "2442": {
+    "inputs": {
+      "samples": [
+        "2434",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "2444": {
+    "inputs": {
+      "pixels": [
+        "3095",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "2451": {
+    "inputs": {
+      "conditioning": [
+        "2438",
+        0
+      ],
+      "latent": [
+        "2440",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Set Reference Latent"
+    }
+  },
+  "2452": {
+    "inputs": {
+      "conditioning": [
+        "2453",
+        0
+      ],
+      "latent": [
+        "2440",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Set Reference Latent"
+    }
+  },
+  "2453": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "2436",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "2454": {
+    "inputs": {
+      "width": [
+        "2404",
+        1
+      ],
+      "height": [
+        "2404",
+        2
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "3001": {
+    "inputs": {
+      "image": "ComfyUI_00053_.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Persona reference"
+    }
+  },
+  "3002": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "3001",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale persona reference"
+    }
+  },
+  "3003": {
+    "inputs": {
+      "pixels": [
+        "3002",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "FLUX: encode persona reference"
+    }
+  },
+  "3004": {
+    "inputs": {
+      "lora_name": "3lm1ra_flux_klein_9B_000002250.safetensors",
+      "strength_model": 0.85,
+      "model": [
+        "3085",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Flux character lora"
+    }
+  },
+  "3005": {
+    "inputs": {
+      "conditioning": [
+        "2451",
+        0
+      ],
+      "latent": [
+        "3003",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "FLUX: reference 2 (persona identity)"
+    }
+  },
+  "3007": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "2402:139",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale Image to Total Pixels"
+    }
+  },
+  "3008": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": [
+        "2399",
+        0
+      ],
+      "height": [
+        "2400",
+        0
+      ],
+      "crop": "center",
+      "image": [
+        "2442",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Upscale Image"
+    }
+  },
+  "3012": {
+    "inputs": {
+      "sage_attention": "disabled",
+      "allow_compile": false,
+      "model": [
+        "2437",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "3013": {
+    "inputs": {
+      "How strongly this image guides": 0.4,
+      "Use image for": "match the scene light",
+      "Manual mode borrows": "overall image",
+      "Prepare image by": "use image as-is",
+      "Color kept": 1,
+      "Small details kept": 1,
+      "Study this image at": "use stack setting",
+      "Frame this reference by": "use stack setting",
+      "Subject copying": "recipe decides",
+      "Early layout guidance": 1,
+      "Final detail copying": 1,
+      "Maximum image pull": 3,
+      "Shape copied": 1,
+      "Overall style reach": 1,
+      "Guide direction": "toward this image",
+      "When this card guides": "recipe decides",
+      "Structure layers pull": 1,
+      "Finish layers pull": 1,
+      "Reference image": [
+        "3097",
+        0
+      ]
+    },
+    "class_type": "KGKrea2ImageGuideCardV10",
+    "_meta": {
+      "title": "KG Krea 2 Image Guide Card V10"
+    }
+  },
+  "3014": {
+    "inputs": {
+      "Final image prompt": [
+        "2312",
+        0
+      ],
+      "Written prompt strength": 1,
+      "Image slider feel": "artist friendly - soft at low values",
+      "Image detail level": "low - loose idea (256)",
+      "Image framing": "keep full image shape",
+      "When images guide": "smart per-card timing",
+      "Early-to-final handoff": 0.4,
+      "Text/logo guard prompt handling": "gentle guard - keep my prompt words",
+      "Balance strong cards": "off - use my values",
+      "Reuse image studies": "reuse between runs - faster tuning",
+      "Krea CLIP": [
+        "56",
+        0
+      ],
+      "Reference 1 guide card": [
+        "3013",
+        0
+      ]
+    },
+    "class_type": "KGTextEncodeKreaImageReferencesV10",
+    "_meta": {
+      "title": "KG Krea 2 Reference Stack Encoder V10"
+    }
+  },
+  "3015": {
+    "inputs": {
+      "Final image prompt": "",
+      "Written prompt strength": 1,
+      "Image slider feel": "artist friendly - soft at low values",
+      "Image detail level": "low - loose idea (256)",
+      "Image framing": "keep full image shape",
+      "When images guide": "smart per-card timing",
+      "Early-to-final handoff": 0.4,
+      "Text/logo guard prompt handling": "gentle guard - keep my prompt words",
+      "Balance strong cards": "off - use my values",
+      "Reuse image studies": "reuse between runs - faster tuning",
+      "Krea CLIP": [
+        "56",
+        0
+      ],
+      "Reference 1 guide card": [
+        "3013",
+        0
+      ]
+    },
+    "class_type": "KGTextEncodeKreaImageReferencesV10",
+    "_meta": {
+      "title": "KG Krea 2 Reference Stack Encoder V10"
+    }
+  },
+  "3019": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": 1440,
+      "height": 1920,
+      "crop": "center",
+      "image": [
+        "2318",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "EDIT: resize to target AR"
+    }
+  },
+  "3020": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "3019",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Scale Image to Total Pixels"
+    }
+  },
+  "3021": {
+    "inputs": {
+      "prompt": "Describe this image in detail for use as an image generation prompt.",
+      "safety_settings": "BLOCK_NONE",
+      "response_type": "text",
+      "model": "gemini-3.1-flash-lite-preview",
+      "api_key": "",
+      "proxy": "",
+      "system_instruction": [
+        "3081",
+        0
+      ],
+      "seed": 559907763,
+      "temperature": 0.7,
+      "num_predict": 512,
+      "images": [
+        "3020",
+        0
+      ]
+    },
+    "class_type": "Ask_Gemini_Batch",
+    "_meta": {
+      "title": "Ask Gemini (Batch)"
+    }
+  },
+  "3023": {
+    "inputs": {
+      "strings": [
+        "3021",
+        0
+      ],
+      "multiline": false,
+      "select": 0
+    },
+    "class_type": "ImpactStringSelector",
+    "_meta": {
+      "title": "panel 2 instruction (line 0)"
+    }
+  },
+  "3024": {
+    "inputs": {
+      "strings": [
+        "3021",
+        0
+      ],
+      "multiline": false,
+      "select": 1
+    },
+    "class_type": "ImpactStringSelector",
+    "_meta": {
+      "title": "panel 3 instruction (line 1)"
+    }
+  },
+  "3025": {
+    "inputs": {
+      "image": [
+        "3020",
+        0
+      ]
+    },
+    "class_type": "GetImageSizeAndCount",
+    "_meta": {
+      "title": "Get Image Size & Count"
+    }
+  },
+  "3026": {
+    "inputs": {
+      "strings": [
+        "3021",
+        0
+      ],
+      "multiline": false,
+      "select": 2
+    },
+    "class_type": "ImpactStringSelector",
+    "_meta": {
+      "title": "panel 4 instruction (line 2)"
+    }
+  },
+  "3027": {
+    "inputs": {
+      "pixels": [
+        "3020",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "FLUX: encode hero render"
+    }
+  },
+  "3028": {
+    "inputs": {
+      "text": [
+        "3023",
+        0
+      ],
+      "clip": [
+        "2436",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "FLUX slide2: instruction"
+    }
+  },
+  "3029": {
+    "inputs": {
+      "text": [
+        "3024",
+        0
+      ],
+      "clip": [
+        "2436",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "FLUX slide3: instruction"
+    }
+  },
+  "3030": {
+    "inputs": {
+      "text": [
+        "3026",
+        0
+      ],
+      "clip": [
+        "2436",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "FLUX slide4: instruction"
+    }
+  },
+  "3031": {
+    "inputs": {
+      "conditioning": [
+        "3028",
+        0
+      ],
+      "latent": [
+        "3027",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "FLUX slide2: reference 1 (scene)"
+    }
+  },
+  "3033": {
+    "inputs": {
+      "conditioning": [
+        "3029",
+        0
+      ],
+      "latent": [
+        "3027",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "FLUX slide3: reference 1 (scene)"
+    }
+  },
+  "3035": {
+    "inputs": {
+      "conditioning": [
+        "3030",
+        0
+      ],
+      "latent": [
+        "3027",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "FLUX slide4: reference 1 (scene)"
+    }
+  },
+  "3037": {
+    "inputs": {
+      "width": [
+        "3025",
+        1
+      ],
+      "height": [
+        "3025",
+        2
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "FLUX: slide latent"
+    }
+  },
+  "3038": {
+    "inputs": {
+      "seed": 974416198551149,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "3004",
+        0
+      ],
+      "positive": [
+        "3031",
+        0
+      ],
+      "negative": [
+        "3068",
+        0
+      ],
+      "latent_image": [
+        "3037",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "FLUX slide2: generate"
+    }
+  },
+  "3039": {
+    "inputs": {
+      "seed": 799404082256871,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "3004",
+        0
+      ],
+      "positive": [
+        "3033",
+        0
+      ],
+      "negative": [
+        "3067",
+        0
+      ],
+      "latent_image": [
+        "3037",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "FLUX slide3: generate"
+    }
+  },
+  "3040": {
+    "inputs": {
+      "seed": 866792129056587,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "3004",
+        0
+      ],
+      "positive": [
+        "3035",
+        0
+      ],
+      "negative": [
+        "3066",
+        0
+      ],
+      "latent_image": [
+        "3037",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "FLUX slide4: generate"
+    }
+  },
+  "3041": {
+    "inputs": {
+      "samples": [
+        "3038",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "FLUX slide2: decode"
+    }
+  },
+  "3042": {
+    "inputs": {
+      "samples": [
+        "3039",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "FLUX slide3: decode"
+    }
+  },
+  "3043": {
+    "inputs": {
+      "samples": [
+        "3040",
+        0
+      ],
+      "vae": [
+        "2435",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "FLUX slide4: decode"
+    }
+  },
+  "3046": {
+    "inputs": {
+      "pixels": [
+        "3082",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "KREA2 slide2: encode flux render"
+    }
+  },
+  "3047": {
+    "inputs": {
+      "pixels": [
+        "3083",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "KREA2 slide3: encode flux render"
+    }
+  },
+  "3050": {
+    "inputs": {
+      "ref_boost": 1,
+      "ref_boost_a": 1,
+      "fit_mode": "fit",
+      "model": [
+        "3107",
+        0
+      ],
+      "source_latent": [
+        "3046",
+        0
+      ]
+    },
+    "class_type": "Krea2EditModelPatch",
+    "_meta": {
+      "title": "KREA2 slide2: model patch"
+    }
+  },
+  "3051": {
+    "inputs": {
+      "ref_boost": 1,
+      "ref_boost_a": 1,
+      "fit_mode": "fit",
+      "model": [
+        "3107",
+        0
+      ],
+      "source_latent": [
+        "3047",
+        0
+      ]
+    },
+    "class_type": "Krea2EditModelPatch",
+    "_meta": {
+      "title": "KREA2 slide3: model patch"
+    }
+  },
+  "3052": {
+    "inputs": {
+      "ref_boost": 1,
+      "ref_boost_a": 1,
+      "fit_mode": "fit",
+      "model": [
+        "3107",
+        0
+      ],
+      "source_latent": [
+        "3061",
+        0
+      ]
+    },
+    "class_type": "Krea2EditModelPatch",
+    "_meta": {
+      "title": "KREA2 slide4: model patch"
+    }
+  },
+  "3053": {
+    "inputs": {
+      "seed": 112106475271874,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "bong_tangent",
+      "denoise": 0.2,
+      "model": [
+        "3052",
+        0
+      ],
+      "positive": [
+        "3080:3077",
+        0
+      ],
+      "negative": [
+        "3080:3079",
+        0
+      ],
+      "latent_image": [
+        "3088",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KREA2 slide4: settle pass (denoise 0.20)"
+    }
+  },
+  "3054": {
+    "inputs": {
+      "seed": 106897424969759,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "bong_tangent",
+      "denoise": 0.2,
+      "model": [
+        "3051",
+        0
+      ],
+      "positive": [
+        "3076:3073",
+        0
+      ],
+      "negative": [
+        "3076:3075",
+        0
+      ],
+      "latent_image": [
+        "3087",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KREA2 slide3: settle pass (denoise 0.20)"
+    }
+  },
+  "3055": {
+    "inputs": {
+      "seed": 246779673897588,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "bong_tangent",
+      "denoise": 0.2,
+      "model": [
+        "3050",
+        0
+      ],
+      "positive": [
+        "3072:3069",
+        0
+      ],
+      "negative": [
+        "3072:3070",
+        0
+      ],
+      "latent_image": [
+        "3086",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KREA2 slide2: settle pass (denoise 0.20)"
+    }
+  },
+  "3056": {
+    "inputs": {
+      "samples": [
+        "3055",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "EDIT: decode"
+    }
+  },
+  "3057": {
+    "inputs": {
+      "samples": [
+        "3054",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "decode panel 3"
+    }
+  },
+  "3058": {
+    "inputs": {
+      "samples": [
+        "3053",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "decode panel 4"
+    }
+  },
+  "3060": {
+    "inputs": {
+      "image1": [
+        "3056",
+        0
+      ],
+      "image2": [
+        "3057",
+        0
+      ]
+    },
+    "class_type": "ImageBatch",
+    "_meta": {
+      "title": "batch panels"
+    }
+  },
+  "3061": {
+    "inputs": {
+      "pixels": [
+        "3084",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "KREA2 slide4: encode flux render"
+    }
+  },
+  "3063": {
+    "inputs": {
+      "image1": [
+        "3060",
+        0
+      ],
+      "image2": [
+        "3058",
+        0
+      ]
+    },
+    "class_type": "ImageBatch",
+    "_meta": {
+      "title": "batch panels"
+    }
+  },
+  "3064": {
+    "inputs": {
+      "image1": [
+        "3063",
+        0
+      ],
+      "image2": [
+        "3019",
+        0
+      ]
+    },
+    "class_type": "ImageBatch",
+    "_meta": {
+      "title": "batch panels"
+    }
+  },
+  "3065": {
+    "inputs": {
+      "filename_prefix": "Krea2_turbo",
+      "images": [
+        "2422",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "3066": {
+    "inputs": {
+      "conditioning": [
+        "3030",
+        0
+      ],
+      "latent": [
+        "3027",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Set Reference Latent"
+    }
+  },
+  "3067": {
+    "inputs": {
+      "conditioning": [
+        "3029",
+        0
+      ],
+      "latent": [
+        "3027",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Set Reference Latent"
+    }
+  },
+  "3068": {
+    "inputs": {
+      "conditioning": [
+        "3028",
+        0
+      ],
+      "latent": [
+        "3027",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "Set Reference Latent"
+    }
+  },
+  "3081": {
+    "inputs": {
+      "value": "You are a shot director for a four-photo social media carousel. You receive the anchor photo (panel 1): a woman in a scene. Write instructions for three more panels as edits of the anchor: same woman, same outfit, same location, same light, a new shot each time, each one more seductive than the last. Make sure to focus on onlyfans content creation e.g. focus on ass out/ tits focussed. pick either one.\n\nEvery line is one sentence, up to 50 words, starting with \"Make a new shot of {subject}, the woman,\". Name the new pose concretely: where her hands are, where her weight sits, which way her hips and shoulders turn, where she looks, and where the camera sits compared to the anchor.\n\nLine 1, the warm-up.\n\nLine 2, the tease.\n\nLine 3, the peak.\n\nEvery line describes only what changes and ends with: same outfit, same room, same light, same person.\n\nThe escalation must feel like one continuous moment building, believable frame to frame.\nWrite only positive statements about what is present in each shot.\n\nIF there is people in the background, make sure they are changed from pose in every line. otherwise dont mention.\n\nChange facial expression.\n\nYou are allowed to alter camera angles. (including selfie angle, or others, never repeat the same angle, always keep the exact same enviroment)\n\nOutput exactly 3 lines, nothing else, only describe what changes. Zero headings, zero numbering, zero commentary."
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Carousel prompt template"
+    }
+  },
+  "3082": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": [
+        "2399",
+        0
+      ],
+      "height": [
+        "2400",
+        0
+      ],
+      "crop": "center",
+      "image": [
+        "3041",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Upscale Image"
+    }
+  },
+  "3083": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": [
+        "2399",
+        0
+      ],
+      "height": [
+        "2400",
+        0
+      ],
+      "crop": "center",
+      "image": [
+        "3042",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Upscale Image"
+    }
+  },
+  "3084": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": [
+        "2399",
+        0
+      ],
+      "height": [
+        "2400",
+        0
+      ],
+      "crop": "center",
+      "image": [
+        "3043",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Upscale Image"
+    }
+  },
+  "3085": {
+    "inputs": {
+      "lora_name": "klein_snofs_v1_4.safetensors",
+      "strength_model": 0.45,
+      "model": [
+        "3012",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Flux style LoRA"
+    }
+  },
+  "3086": {
+    "inputs": {
+      "seed": 937635906311233,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 0.8,
+      "model": [
+        "3050",
+        0
+      ],
+      "positive": [
+        "3072:3069",
+        0
+      ],
+      "negative": [
+        "3072:3070",
+        0
+      ],
+      "latent_image": [
+        "3046",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KREA2: detail pass (denoise 0.8)"
+    }
+  },
+  "3087": {
+    "inputs": {
+      "seed": 1118806785178740,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 0.8,
+      "model": [
+        "3051",
+        0
+      ],
+      "positive": [
+        "3076:3073",
+        0
+      ],
+      "negative": [
+        "3076:3075",
+        0
+      ],
+      "latent_image": [
+        "3047",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KREA2: detail pass (denoise 0.8)"
+    }
+  },
+  "3088": {
+    "inputs": {
+      "seed": 234460880843147,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 0.8,
+      "model": [
+        "3052",
+        0
+      ],
+      "positive": [
+        "3080:3077",
+        0
+      ],
+      "negative": [
+        "3080:3079",
+        0
+      ],
+      "latent_image": [
+        "3061",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KREA2: detail pass (denoise 0.8)"
+    }
+  },
+  "2402:139": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": [
+        "2399",
+        0
+      ],
+      "height": [
+        "2400",
+        0
+      ],
+      "crop": "center",
+      "image": [
+        "1030",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Upscale Image"
+    }
+  },
+  "3072:3069": {
+    "inputs": {
+      "Final image prompt": [
+        "3023",
+        0
+      ],
+      "Written prompt strength": 1,
+      "Image slider feel": "artist friendly - soft at low values",
+      "Image detail level": "low - loose idea (256)",
+      "Image framing": "keep full image shape",
+      "When images guide": "smart per-card timing",
+      "Early-to-final handoff": 0.4,
+      "Text/logo guard prompt handling": "gentle guard - keep my prompt words",
+      "Balance strong cards": "off - use my values",
+      "Reuse image studies": "reuse between runs - faster tuning",
+      "Krea CLIP": [
+        "56",
+        0
+      ],
+      "Reference 1 guide card": [
+        "3072:3071",
+        0
+      ]
+    },
+    "class_type": "KGTextEncodeKreaImageReferencesV10",
+    "_meta": {
+      "title": "KG Krea 2 Reference Stack Encoder V10"
+    }
+  },
+  "3072:3071": {
+    "inputs": {
+      "How strongly this image guides": 0.2,
+      "Use image for": "copy lighting and mood",
+      "Manual mode borrows": "overall image",
+      "Prepare image by": "use image as-is",
+      "Color kept": 1,
+      "Small details kept": 1,
+      "Study this image at": "use stack setting",
+      "Frame this reference by": "use stack setting",
+      "Subject copying": "recipe decides",
+      "Early layout guidance": 1,
+      "Final detail copying": 1,
+      "Maximum image pull": 3,
+      "Shape copied": 1,
+      "Overall style reach": 1,
+      "Guide direction": "toward this image",
+      "When this card guides": "final details only",
+      "Structure layers pull": 1,
+      "Finish layers pull": 1,
+      "Reference image": [
+        "2402:139",
+        0
+      ]
+    },
+    "class_type": "KGKrea2ImageGuideCardV10",
+    "_meta": {
+      "title": "KG Krea 2 Image Guide Card V10"
+    }
+  },
+  "3072:3070": {
+    "inputs": {
+      "Final image prompt": "",
+      "Written prompt strength": 1,
+      "Image slider feel": "artist friendly - soft at low values",
+      "Image detail level": "low - loose idea (256)",
+      "Image framing": "keep full image shape",
+      "When images guide": "smart per-card timing",
+      "Early-to-final handoff": 0.4,
+      "Text/logo guard prompt handling": "full guard - rewrite my prompt",
+      "Balance strong cards": "off - use my values",
+      "Reuse image studies": "reuse between runs - faster tuning",
+      "Krea CLIP": [
+        "56",
+        0
+      ],
+      "Reference 1 guide card": [
+        "3072:3071",
+        0
+      ]
+    },
+    "class_type": "KGTextEncodeKreaImageReferencesV10",
+    "_meta": {
+      "title": "KG Krea 2 Reference Stack Encoder V10"
+    }
+  },
+  "3076:3073": {
+    "inputs": {
+      "Final image prompt": [
+        "3024",
+        0
+      ],
+      "Written prompt strength": 1,
+      "Image slider feel": "artist friendly - soft at low values",
+      "Image detail level": "low - loose idea (256)",
+      "Image framing": "keep full image shape",
+      "When images guide": "smart per-card timing",
+      "Early-to-final handoff": 0.4,
+      "Text/logo guard prompt handling": "gentle guard - keep my prompt words",
+      "Balance strong cards": "off - use my values",
+      "Reuse image studies": "reuse between runs - faster tuning",
+      "Krea CLIP": [
+        "56",
+        0
+      ],
+      "Reference 1 guide card": [
+        "3076:3074",
+        0
+      ]
+    },
+    "class_type": "KGTextEncodeKreaImageReferencesV10",
+    "_meta": {
+      "title": "KG Krea 2 Reference Stack Encoder V10"
+    }
+  },
+  "3076:3074": {
+    "inputs": {
+      "How strongly this image guides": 0.2,
+      "Use image for": "copy lighting and mood",
+      "Manual mode borrows": "overall image",
+      "Prepare image by": "use image as-is",
+      "Color kept": 1,
+      "Small details kept": 1,
+      "Study this image at": "use stack setting",
+      "Frame this reference by": "use stack setting",
+      "Subject copying": "recipe decides",
+      "Early layout guidance": 1,
+      "Final detail copying": 1,
+      "Maximum image pull": 3,
+      "Shape copied": 1,
+      "Overall style reach": 1,
+      "Guide direction": "toward this image",
+      "When this card guides": "final details only",
+      "Structure layers pull": 1,
+      "Finish layers pull": 1,
+      "Reference image": [
+        "2402:139",
+        0
+      ]
+    },
+    "class_type": "KGKrea2ImageGuideCardV10",
+    "_meta": {
+      "title": "KG Krea 2 Image Guide Card V10"
+    }
+  },
+  "3076:3075": {
+    "inputs": {
+      "Final image prompt": "",
+      "Written prompt strength": 1,
+      "Image slider feel": "artist friendly - soft at low values",
+      "Image detail level": "low - loose idea (256)",
+      "Image framing": "keep full image shape",
+      "When images guide": "smart per-card timing",
+      "Early-to-final handoff": 0.4,
+      "Text/logo guard prompt handling": "full guard - rewrite my prompt",
+      "Balance strong cards": "off - use my values",
+      "Reuse image studies": "reuse between runs - faster tuning",
+      "Krea CLIP": [
+        "56",
+        0
+      ],
+      "Reference 1 guide card": [
+        "3076:3074",
+        0
+      ]
+    },
+    "class_type": "KGTextEncodeKreaImageReferencesV10",
+    "_meta": {
+      "title": "KG Krea 2 Reference Stack Encoder V10"
+    }
+  },
+  "3080:3077": {
+    "inputs": {
+      "Final image prompt": [
+        "3026",
+        0
+      ],
+      "Written prompt strength": 1,
+      "Image slider feel": "artist friendly - soft at low values",
+      "Image detail level": "low - loose idea (256)",
+      "Image framing": "keep full image shape",
+      "When images guide": "smart per-card timing",
+      "Early-to-final handoff": 0.4,
+      "Text/logo guard prompt handling": "gentle guard - keep my prompt words",
+      "Balance strong cards": "off - use my values",
+      "Reuse image studies": "reuse between runs - faster tuning",
+      "Krea CLIP": [
+        "56",
+        0
+      ],
+      "Reference 1 guide card": [
+        "3080:3078",
+        0
+      ]
+    },
+    "class_type": "KGTextEncodeKreaImageReferencesV10",
+    "_meta": {
+      "title": "KG Krea 2 Reference Stack Encoder V10"
+    }
+  },
+  "3080:3078": {
+    "inputs": {
+      "How strongly this image guides": 0.2,
+      "Use image for": "copy lighting and mood",
+      "Manual mode borrows": "overall image",
+      "Prepare image by": "use image as-is",
+      "Color kept": 1,
+      "Small details kept": 1,
+      "Study this image at": "use stack setting",
+      "Frame this reference by": "use stack setting",
+      "Subject copying": "recipe decides",
+      "Early layout guidance": 1,
+      "Final detail copying": 1,
+      "Maximum image pull": 3,
+      "Shape copied": 1,
+      "Overall style reach": 1,
+      "Guide direction": "toward this image",
+      "When this card guides": "final details only",
+      "Structure layers pull": 1,
+      "Finish layers pull": 1,
+      "Reference image": [
+        "2402:139",
+        0
+      ]
+    },
+    "class_type": "KGKrea2ImageGuideCardV10",
+    "_meta": {
+      "title": "KG Krea 2 Image Guide Card V10"
+    }
+  },
+  "3080:3079": {
+    "inputs": {
+      "Final image prompt": "",
+      "Written prompt strength": 1,
+      "Image slider feel": "artist friendly - soft at low values",
+      "Image detail level": "low - loose idea (256)",
+      "Image framing": "keep full image shape",
+      "When images guide": "smart per-card timing",
+      "Early-to-final handoff": 0.4,
+      "Text/logo guard prompt handling": "full guard - rewrite my prompt",
+      "Balance strong cards": "off - use my values",
+      "Reuse image studies": "reuse between runs - faster tuning",
+      "Krea CLIP": [
+        "56",
+        0
+      ],
+      "Reference 1 guide card": [
+        "3080:3078",
+        0
+      ]
+    },
+    "class_type": "KGTextEncodeKreaImageReferencesV10",
+    "_meta": {
+      "title": "KG Krea 2 Reference Stack Encoder V10"
+    }
+  },
+  "3094": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 456649360676598,
+      "steps": 11,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "start_at_step": 6,
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "1034",
+        0
+      ],
+      "positive": [
+        "3014",
+        0
+      ],
+      "negative": [
+        "3105",
+        0
+      ],
+      "latent_image": [
+        "2444",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "Sampler I2I"
+    }
+  },
+  "3095": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "scale_by": 2,
+      "image": [
+        "3008",
+        0
+      ]
+    },
+    "class_type": "ImageScaleBy",
+    "_meta": {
+      "title": "Upscale Image By"
+    }
+  },
+  "3097": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "scale_by": 2,
+      "image": [
+        "2402:139",
+        0
+      ]
+    },
+    "class_type": "ImageScaleBy",
+    "_meta": {
+      "title": "Upscale Image By"
+    }
+  },
+  "3099": {
+    "inputs": {
+      "guidance": 4,
+      "conditioning": [
+        "3005",
+        0
+      ]
+    },
+    "class_type": "FluxGuidance",
+    "_meta": {
+      "title": "FluxGuidance"
+    }
+  },
+  "3101": {
+    "inputs": {
+      "prompt": "Describe the clothing worn in this image, start the sentence with \"she wears, [description here]\"",
+      "safety_settings": "BLOCK_NONE",
+      "response_type": "text",
+      "model": "gemini-3.1-flash-lite-preview",
+      "api_key": "",
+      "proxy": "",
+      "system_instruction": "",
+      "seed": 428269956,
+      "temperature": 0.2,
+      "num_predict": 512,
+      "images": [
+        "2348",
+        0
+      ]
+    },
+    "class_type": "Ask_Gemini_Batch",
+    "_meta": {
+      "title": "Ask Gemini (Batch)"
+    }
+  },
+  "3102": {
+    "inputs": {
+      "string_a": "Replace the character in image 1 with {subject}, she has no tattoo's or piercings so she has a clean skin",
+      "string_b": [
+        "3101",
+        0
+      ],
+      "delimiter": ", "
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate Text"
+    }
+  },
+  "3103": {
+    "inputs": {
+      "string_a": [
+        "3102",
+        0
+      ],
+      "string_b": ", ",
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate Text"
+    }
+  },
+  "3104": {
+    "inputs": {
+      "string_a": [
+        "3103",
+        0
+      ],
+      "string_b": "keep the pose and image composition exactly as is in image 1, only swap the character. The image has no watermarks",
+      "delimiter": ", "
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate Text"
+    }
+  },
+  "3105": {
+    "inputs": {
+      "conditioning": [
+        "3015",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Conditioning Zero Out"
+    }
+  },
+  "3107": {
+    "inputs": {
+      "lora_name": "krea2_identity_edit_v1_2.safetensors",
+      "strength_model": 1,
+      "model": [
+        "1034",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "POV for carousel"
+    }
+  }
+}
