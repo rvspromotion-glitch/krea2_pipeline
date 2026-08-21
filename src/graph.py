@@ -35,7 +35,7 @@ MODES = ("single", "carousel")
 #
 # v1 stays the default. It is what has been rendering, and a version that has
 # to be asked for cannot become the default by accident.
-VERSIONS = ("v1", "v2", "v3", "v4", "v5")
+VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6")
 DEFAULT_VERSION = "v1"
 
 _FILES = {
@@ -53,6 +53,12 @@ _FILES = {
     # after the hero is untouched.
     ("v5", "single"):   "single_photo_v5.json",
     ("v5", "carousel"): "carousel_v5.json",
+    # v6 drops the Krea2 edit patch, supersamples the hero at 2x and brings it
+    # back down before the compression pass, and gives Flux its own short
+    # prompt assembled from a second Gemini call. Its carousel is v5's slide
+    # chain behind that hero.
+    ("v6", "single"):   "single_photo_v6.json",
+    ("v6", "carousel"): "carousel_v6.json",
 }
 
 
@@ -89,6 +95,11 @@ TITLE_FLUX_CHARACTER_LORA = "Flux character lora"
 TITLE_FLUX_STYLE_LORA = "Flux style LoRA"
 
 SUBJECT_PLACEHOLDER = "{subject}"
+
+# Where a persona may be written. The Krea2 shot-director template has always
+# been a PrimitiveStringMultiline; v6 added a second slot in the string the
+# Flux prompt is concatenated from. See _set_subject.
+SUBJECT_NODE_TYPES = ("PrimitiveStringMultiline", "StringConcatenate")
 
 # The narrowest seed input in these graphs, not the widest. Ask_Gemini_Batch
 # caps at 2**31 and rejects the whole prompt above it — "Value 3122519035678089
@@ -226,21 +237,37 @@ def _by_class(graph: dict, class_type: str, minimum: int = 1) -> list[str]:
 # ── Patching ─────────────────────────────────────────────────────────────────
 
 def _set_subject(graph: dict, subject: str) -> int:
-    """Substitute the persona into every prompt template that carries the slot.
+    """Substitute the persona into every prompt slot carrying the placeholder.
 
     The templates are identical boilerplate apart from this one span, which is
     why the trigger word and description are stored once per persona rather than
     as two full prompts that can drift apart.
+
+    Two node types, because v6 writes the persona twice: the Krea2
+    shot-director template is a ``PrimitiveStringMultiline``, and the Flux
+    prompt is assembled by ``StringConcatenate`` from an opening line and a
+    Gemini clothing description. Missing the second is not a crash — Flux would
+    be handed the literal text "{subject}", the character LoRA would have no
+    trigger word to anchor on, and the render would come back plausible but
+    with a weaker identity swap. Exactly the kind of failure nobody finds.
+
+    Deliberately a named list rather than a scan of every string in the graph:
+    these are the only two places a persona is ever written, and a third would
+    be a decision worth making on purpose.
+
+    Returns the number of *fields* patched, which is two for v6 and one before.
     """
     patched = 0
     for node in graph.values():
-        if node.get("class_type") != "PrimitiveStringMultiline":
+        if node.get("class_type") not in SUBJECT_NODE_TYPES:
             continue
-        value = node["inputs"].get("value", "")
-        if SUBJECT_PLACEHOLDER in value:
+        for field, value in node["inputs"].items():
+            # A linked input is a [node_id, slot] pair, not text.
+            if not isinstance(value, str) or SUBJECT_PLACEHOLDER not in value:
+                continue
             # replace, not format: the prompt text is free-form and a stray
             # brace would make str.format raise.
-            node["inputs"]["value"] = value.replace(SUBJECT_PLACEHOLDER, subject)
+            node["inputs"][field] = value.replace(SUBJECT_PLACEHOLDER, subject)
             patched += 1
     if patched == 0:
         raise GraphError("no prompt template contained the {subject} placeholder")
