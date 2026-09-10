@@ -253,6 +253,12 @@ def test_the_shipped_workflows_still_carry_the_sage_node():
     """If this ever fails the graphs changed and the rest of this section is
     testing nothing — which is the quiet way for the crash to come back."""
     for key, name in graph_mod._FILES.items():
+        # v7 was exported without SageAttention. It makes no difference on the
+        # endpoint this runs on — Blackwell, where sage's kernels do not compile
+        # and every graph's sage node is bypassed anyway — so its absence is
+        # intentional, not the silent graph change this guards against.
+        if name == "single_photo_v7.json":
+            continue
         raw = json.loads((ROOT / "workflows" / name).read_text())
         assert any(n["class_type"] == "PathchSageAttentionKJ" for n in raw.values()), key
 
@@ -270,6 +276,8 @@ def test_bypassing_reconnects_consumers_rather_than_orphaning_them(version, mode
     the LoRA chain loses the checkpoint and the job fails validation instead."""
     raw = json.loads((ROOT / "workflows" / graph_mod._FILES[(version, mode)]).read_text())
     sage = [nid for nid, n in raw.items() if n["class_type"] == "PathchSageAttentionKJ"]
+    if not sage:
+        pytest.skip("this graph carries no SageAttention node to bypass (v7)")
     upstream = {nid: raw[nid]["inputs"]["model"] for nid in sage}
     consumers = {
         (nid, field): raw[nid]["inputs"][field][0]
@@ -447,25 +455,32 @@ def test_the_flux_models_are_loaded_by_the_expected_node_types(mode):
 # variables and still ends in one SaveImage. These pin that.
 
 
-def _job_kwargs(version):
-    """The job variables every version takes, plus the two v3 introduced."""
+def _job_kwargs(version, mode="single"):
+    """The job variables every version takes, plus the ones later versions add.
+
+    Keyed off the *actual* (mode, version) graph, not a list of versions and not
+    the single graph as a proxy: v7's single and carousel are different graphs
+    with different needs (its carousel falls back to v6's), so deciding the
+    kwargs from the single graph would hand the carousel the wrong set.
+    """
     kwargs = dict(image_filename="ref.png", lora_name="Chloe_v1.safetensors",
                   trigger_word="ch10e", description="young woman with red hair",
                   gemini_api_key="KEY", seed=7, version=version)
+    graph = graph_mod.load(mode, version)
     # Every version from v3 on renders through Flux as well as Krea2, so it
-    # needs the persona's photo and its own Klein LoRA. Keyed off the graph
-    # rather than a list of versions, so adding a version cannot leave this
-    # behind — which is exactly what happened when v5 arrived.
-    graph = graph_mod.load("single", version)
+    # needs the persona's photo and its own Klein LoRA.
     if graph_mod._optional_by_title(graph, graph_mod.TITLE_PERSONA_REFERENCE):
         kwargs.update(persona_reference="chloe_face.png",
                       flux_lora_name="Chloe_klein.safetensors")
+    # v7 adds a per-persona Flux edit instruction (the hair recolour).
+    if graph_mod._optional_by_title(graph, graph_mod.TITLE_FLUX_EDIT):
+        kwargs.update(flux_edit_prompt="Change her hair to red, keep everything else exactly the same.")
     return kwargs
 
 
 @pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
 def test_every_version_takes_the_same_job_variables(version, mode):
-    graph = graph_mod.patch(mode, **_job_kwargs(version))
+    graph = graph_mod.patch(mode, **_job_kwargs(version, mode))
 
     image = graph_mod._by_title(graph, graph_mod.TITLE_INPUT_IMAGE)[0]
     lora = graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]
@@ -473,17 +488,26 @@ def test_every_version_takes_the_same_job_variables(version, mode):
     assert graph[lora]["inputs"]["lora_name"] == "Chloe_v1.safetensors"
     assert graph_mod.output_node(graph)
 
-    prompts = [n["inputs"]["value"] for n in graph.values()
-               if n["class_type"] == "PrimitiveStringMultiline"]
-    assert prompts, "no prompt template survived patching"
-    assert all("ch10e, young woman with red hair" in p for p in prompts)
-    assert not any(graph_mod.SUBJECT_PLACEHOLDER in p for p in prompts)
+    # The subject lands in a subject node — a PrimitiveStringMultiline for
+    # v1–v6, a StringConcatenate for v7, which assembles the positive from a
+    # fixed style prefix and the subject and feeds a PrimitiveStringMultiline
+    # through a link. So check the subject-typed string values, not only the
+    # PrimitiveStringMultiline ones (v7's negative is one of those and carries
+    # no subject): the subject must appear in at least one, and no placeholder
+    # may survive in any.
+    subject_values = [v for n in graph.values()
+                      if n["class_type"] in graph_mod.SUBJECT_NODE_TYPES
+                      for v in n["inputs"].values() if isinstance(v, str)]
+    assert subject_values, "no subject template survived patching"
+    assert any("ch10e, young woman with red hair" in v for v in subject_values), \
+        "the subject was not substituted into any prompt template"
+    assert not any(graph_mod.SUBJECT_PLACEHOLDER in v for v in subject_values)
 
 
 @pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
 def test_every_link_resolves_after_patching(version, mode):
     """A dangling link is a ComfyUI validation failure at hour three, not here."""
-    graph = graph_mod.patch(mode, **_job_kwargs(version))
+    graph = graph_mod.patch(mode, **_job_kwargs(version, mode))
 
     dangling = [
         f"{nid}.{field} -> {value[0]}"
@@ -1069,7 +1093,7 @@ def test_no_placeholder_survives_a_patch(mode, version):
     """A leftover {subject} does not raise anywhere — it just goes to the model
     as literal text. Checked across every version so the next export cannot
     reintroduce it in a node type nobody thought about."""
-    graph = graph_mod.patch(mode, **_job_kwargs(version))
+    graph = graph_mod.patch(mode, **_job_kwargs(version, mode))
 
     left = [f"{nid}.{field}" for nid, node in graph.items()
             for field, value in node["inputs"].items()

@@ -174,6 +174,10 @@ def run_job(payload: dict) -> dict:
                                   required=False)
     reference = _fetch_reference(payload)
     persona_reference = _fetch_persona_reference(payload)
+    # v7 only: the per-persona Flux edit instruction (e.g. the hair recolour).
+    # Optional here — the graph is what decides whether it is required, and
+    # graph.patch() raises if a v7 graph is handed nothing.
+    flux_edit_prompt = (payload.get("flux_edit_prompt") or "").strip() or None
     seed = payload.get("seed")
 
     comfy.wait_until_ready()
@@ -198,6 +202,7 @@ def run_job(payload: dict) -> dict:
         version=version,
         persona_reference=uploaded_persona,
         flux_lora_name=flux_lora_name,
+        flux_edit_prompt=flux_edit_prompt,
     )
     log.info("patched %s/%s graph: %s", version, mode, graph_mod.describe(job_graph))
 
