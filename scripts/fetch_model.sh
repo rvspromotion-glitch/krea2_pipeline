@@ -32,6 +32,46 @@ read_secret() {
   printf '%s' "$(eval "printf '%s' \"\${${name}:-}\"" | tr -d '\r\n')"
 }
 
+# Safetensors states its own length: eight bytes of little-endian header size,
+# that many bytes of JSON, then tensor data at the offsets the JSON declares.
+# Asking a file whether it is complete beats guessing from its size in both
+# directions — it accepts a model that is legitimately tiny, and it catches a
+# 12G checkpoint that stopped halfway, which a size floor never could.
+#
+#   0  complete safetensors
+#   2  safetensors, but shorter than its own header says — a cut-off download
+#   1  not safetensors at all; the caller falls back to the size/HTML check
+safetensors_state() {
+  python3 - "$1" <<'PY'
+import json, os, struct, sys
+
+path = sys.argv[1]
+try:
+    size = os.path.getsize(path)
+    with open(path, "rb") as fh:
+        raw = fh.read(8)
+        if len(raw) < 8:
+            sys.exit(1)
+        length = struct.unpack("<Q", raw)[0]
+        # An HTML page read as a little-endian u64 is astronomically large, so
+        # an implausible header length is how "not safetensors" spells itself.
+        if not 2 <= length <= 100_000_000 or 8 + length > size:
+            sys.exit(1)
+        header = json.loads(fh.read(length))
+    if not isinstance(header, dict):
+        sys.exit(1)
+    end = max((info["data_offsets"][1]
+               for key, info in header.items()
+               if key != "__metadata__" and isinstance(info, dict)
+               and isinstance(info.get("data_offsets"), list)), default=0)
+    sys.exit(0 if size >= 8 + length + end else 2)
+except SystemExit:
+    raise
+except Exception:
+    sys.exit(1)
+PY
+}
+
 # A build that half-downloads a checkpoint must not produce a working image with
 # a truncated model inside it — that surfaces as a cryptic load error at render
 # time, on the Sunday batch, with nothing in the build log to explain it.
@@ -40,26 +80,49 @@ verify() {
   local bytes=0
   [ -f "$out" ] && bytes=$(stat -c %s "$out")
 
-  if [ "$bytes" -gt 1048576 ] && [ "$(head -c 1 "$out")" != "<" ]; then
-    echo "[fetch] ok: $out ($(du -h "$out" | cut -f1), HTTP ${http})"
-    return 0
+  local state=1
+  if [ "$bytes" -gt 8 ]; then
+    state=0
+    safetensors_state "$out" || state=$?
   fi
+
+  # A size floor was not a harmless approximation of this: fedor_bypass is 1040
+  # bytes because it carries a single [1, 12] tensor, and a >1MiB test called it
+  # an error page, failed the fetch and crash-looped the worker on every cold
+  # start. Anything we cannot parse is still judged on size, so a format this
+  # does not understand cannot start failing a boot that works today.
+  local truncated=""
+  case "$state" in
+    0) echo "[fetch] ok: $out ($(du -h "$out" | cut -f1), HTTP ${http})"
+       return 0 ;;
+    2) truncated=1 ;;
+    *) if [ "$bytes" -gt 1048576 ] && [ "$(head -c 1 "$out")" != "<" ]; then
+         echo "[fetch] ok: $out ($(du -h "$out" | cut -f1), HTTP ${http})"
+         return 0
+       fi ;;
+  esac
 
   echo "[fetch] ERROR: ${out} is not a model."
   echo "        HTTP status : ${http}"
   echo "        bytes        : ${bytes}"
-  echo "        first 400 bytes of what the server actually sent:"
-  head -c 400 "$out" 2>/dev/null | sed 's/^/        | /'
-  echo
-  case "$http" in
-    401|403) echo "        -> the token was rejected. Check the CIVITAI_TOKEN /"
-             echo "           HF_TOKEN repo secret, and that the account can"
-             echo "           download this file." ;;
-    404)     echo "        -> the model id or fileId is wrong, or the file was"
-             echo "           taken down." ;;
-    200)     echo "        -> HTTP 200 with a web page in the body. The URL"
-             echo "           resolved to a page rather than a file." ;;
-  esac
+  if [ -n "$truncated" ]; then
+    echo "        -> this is safetensors, but the file is shorter than its own"
+    echo "           header says it should be: the download was cut off part"
+    echo "           way. Retrying usually fixes it."
+  else
+    echo "        first 400 bytes of what the server actually sent:"
+    head -c 400 "$out" 2>/dev/null | sed 's/^/        | /'
+    echo
+    case "$http" in
+      401|403) echo "        -> the token was rejected. Check the CIVITAI_TOKEN /"
+               echo "           HF_TOKEN repo secret, and that the account can"
+               echo "           download this file." ;;
+      404)     echo "        -> the model id or fileId is wrong, or the file was"
+               echo "           taken down." ;;
+      200)     echo "        -> HTTP 200 with a web page in the body. The URL"
+               echo "           resolved to a page rather than a file." ;;
+    esac
+  fi
   rm -f "$out"
   exit 1
 }

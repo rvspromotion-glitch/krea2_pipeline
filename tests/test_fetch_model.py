@@ -13,7 +13,9 @@ fail loudly and leave no file behind.
 from __future__ import annotations
 
 import http.server
+import json
 import socket
+import struct
 import subprocess
 import threading
 from pathlib import Path
@@ -23,6 +25,29 @@ import pytest
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "fetch_model.sh"
 MODEL_BYTES = b"\x00" * (3 * 1024 * 1024)
 HTML = b'<!doctype html>\n<html lang="en"><head><meta charset="utf-8" /></head></html>\n'
+
+
+def safetensors(payload: bytes, metadata: dict = None, declared: int = None) -> bytes:
+    """A real safetensors file holding one tensor.
+
+    `declared` overstates the tensor's length without lengthening the body,
+    which is what a download cut off part way looks like on disk.
+    """
+    header = {"weight": {"dtype": "F32", "shape": [1, len(payload) // 4],
+                         "data_offsets": [0, declared or len(payload)]}}
+    if metadata:
+        header["__metadata__"] = metadata
+    blob = json.dumps(header).encode()
+    return struct.pack("<Q", len(blob)) + blob + payload
+
+
+# The file that crash-looped the worker: one [1, 12] tensor, so 48 bytes of
+# payload and roughly a kilobyte all in — three orders of magnitude under the
+# 1MiB floor the old check applied.
+TINY_MODEL = safetensors(b"\x00" * 48, metadata={
+    "name": "fedor_bypass",
+    "target_weight": "diffusion_model.txtfusion.projector.weight",
+})
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
@@ -41,6 +66,20 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(MODEL_BYTES)))
             self.end_headers()
             self.wfile.write(MODEL_BYTES)
+        elif self.path.startswith("/tiny"):
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(TINY_MODEL)))
+            self.end_headers()
+            self.wfile.write(TINY_MODEL)
+        elif self.path.startswith("/cutoff"):
+            # Big enough to clear the old size floor, but the tensor stops short
+            # of what its own header promises.
+            body = safetensors(b"\x00" * (2 * 1024 * 1024),
+                               declared=8 * 1024 * 1024)
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         elif self.path.startswith("/page"):
             self.send_response(200)
             self.send_header("Content-Length", str(len(HTML)))
@@ -149,6 +188,31 @@ def test_a_missing_token_fails_before_downloading_anything(server, tmp_path):
     assert result.returncode == 1
     assert "CIVITAI_TOKEN" in result.stdout
     assert not out.exists()
+
+
+def test_a_kilobyte_model_is_accepted(server, secrets, tmp_path):
+    """The V7 crash loop. fedor_bypass is 1040 bytes of real safetensors, and a
+    >1MiB floor rejected it as an error page — so the fetch failed, the worker
+    refused to boot, RunPod restarted it, and it did that every 15 seconds."""
+    out = tmp_path / "fedor_bypass.safetensors"
+
+    result = _fetch(f"{server}/tiny", out, secrets)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert out.read_bytes() == TINY_MODEL
+    assert len(TINY_MODEL) < 1048576, "the fixture has to be under the old floor"
+
+
+def test_a_cut_off_download_is_still_rejected(server, secrets, tmp_path):
+    """Dropping the size floor must not cost us truncation detection — it buys
+    better: a file is judged against its own header, not a constant."""
+    out = tmp_path / "model.safetensors"
+
+    result = _fetch(f"{server}/cutoff", out, secrets)
+
+    assert result.returncode == 1
+    assert not out.exists(), "a partial model must not be left in the image"
+    assert "cut off" in result.stdout
 
 
 def test_the_token_never_appears_in_a_url(server, secrets, tmp_path):
