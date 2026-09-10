@@ -32,45 +32,28 @@ read_secret() {
   printf '%s' "$(eval "printf '%s' \"\${${name}:-}\"" | tr -d '\r\n')"
 }
 
-# Safetensors states its own length: eight bytes of little-endian header size,
-# that many bytes of JSON, then tensor data at the offsets the JSON declares.
-# Asking a file whether it is complete beats guessing from its size in both
-# directions — it accepts a model that is legitimately tiny, and it catches a
-# 12G checkpoint that stopped halfway, which a size floor never could.
-#
-#   0  complete safetensors
-#   2  safetensors, but shorter than its own header says — a cut-off download
-#   1  not safetensors at all; the caller falls back to the size/HTML check
-safetensors_state() {
-  python3 - "$1" <<'PY'
-import json, os, struct, sys
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHECK_MODEL="${HERE}/check_model.py"
 
-path = sys.argv[1]
-try:
-    size = os.path.getsize(path)
-    with open(path, "rb") as fh:
-        raw = fh.read(8)
-        if len(raw) < 8:
-            sys.exit(1)
-        length = struct.unpack("<Q", raw)[0]
-        # An HTML page read as a little-endian u64 is astronomically large, so
-        # an implausible header length is how "not safetensors" spells itself.
-        if not 2 <= length <= 100_000_000 or 8 + length > size:
-            sys.exit(1)
-        header = json.loads(fh.read(length))
-    if not isinstance(header, dict):
-        sys.exit(1)
-    end = max((info["data_offsets"][1]
-               for key, info in header.items()
-               if key != "__metadata__" and isinstance(info, dict)
-               and isinstance(info.get("data_offsets"), list)), default=0)
-    sys.exit(0 if size >= 8 + length + end else 2)
-except SystemExit:
-    raise
-except Exception:
-    sys.exit(1)
-PY
+# 0 complete safetensors, 2 truncated, 1 not safetensors. See check_model.py —
+# shared with fetch_models.sh so the two cannot disagree on what a model is.
+safetensors_state() {
+  python3 "$CHECK_MODEL" "$1"
 }
+
+# A stalled transfer is not a slow one. Bounding a 13G download with a wall
+# clock would kill legitimate fetches on a bad night, so the handshake gets a
+# deadline and the transfer gets a floor: give up only when nothing is moving.
+# --speed-limit/--speed-time abort below 1KB/s sustained for a minute; aria2
+# spells the same thing --lowest-speed-limit.
+#
+# Without these a download does not fail, it hangs: Civitai accepted the
+# connection, never answered, and the boot sat there until RunPod reaped the
+# container ~8 minutes later — having thrown away 52G it had already fetched.
+CONNECT_TIMEOUT=30
+STALL_BYTES=1024
+STALL_SECONDS=60
+ARIA_STALL=(--lowest-speed-limit=1K --connect-timeout=30 --timeout=60)
 
 # A build that half-downloads a checkpoint must not produce a working image with
 # a truncated model inside it — that surfaces as a cryptic load error at render
@@ -175,9 +158,16 @@ PY
     # asked for it: a URL recovered from a HEAD chain serves a web page, which
     # is exactly how this broke once before. `-r 0-0` is a real GET that
     # transfers one byte.
+    #
+    # This transfers one byte, so it has no business taking longer than a
+    # moment — and it is exactly where the boot used to hang, with no timeout
+    # of any kind on it. Bounded hard, and retried, so a Civitai hiccup costs
+    # seconds and falls through to curl rather than costing the container.
     signed=""
     if command -v aria2c >/dev/null 2>&1; then
       signed=$(curl -sS -L -o /dev/null -r 0-0 \
+                 --connect-timeout "$CONNECT_TIMEOUT" --max-time 60 \
+                 --retry 3 --retry-delay 2 --retry-all-errors \
                  -H "Authorization: Bearer ${token}" \
                  -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
                  -w '%{url_effective}' "$url" 2>/dev/null) || signed=""
@@ -186,7 +176,7 @@ PY
     if [ -n "$signed" ] && [ "$signed" != "$url" ]; then
       echo "[fetch] resolved to $(printf '%s' "$signed" | sed 's#\(https\?://[^/]*\)/.*#\1/…#')"
       if aria2c -x 16 -s 16 -k 1M --split=16 --min-split-size=1M \
-                --max-tries=5 --retry-wait=3 --connect-timeout=30 --timeout=60 \
+                --max-tries=5 --retry-wait=3 "${ARIA_STALL[@]}" \
                 --allow-overwrite=true --file-allocation=none \
                 --console-log-level=warn --summary-interval=0 \
                 -d "$(dirname "$out")" -o "$(basename "$out")" "$signed"; then
@@ -202,6 +192,8 @@ PY
     # but it needs nothing resolved in advance, and curl drops the auth header
     # on the cross-host hop by itself.
     http=$(curl -sSL --retry 8 --retry-delay 3 --retry-all-errors \
+             --connect-timeout "$CONNECT_TIMEOUT" \
+             --speed-limit "$STALL_BYTES" --speed-time "$STALL_SECONDS" \
              -H "Authorization: Bearer ${token}" \
              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
              -w '%{http_code}' -o "$out" "$url") || http="000"
@@ -220,7 +212,7 @@ PY
     echo "[fetch] url $(basename "$out")"
     if command -v aria2c >/dev/null 2>&1; then
       if aria2c -x 16 -s 16 -k 1M --split=16 --min-split-size=1M \
-                --max-tries=5 --retry-wait=3 --connect-timeout=30 --timeout=60 \
+                --max-tries=5 --retry-wait=3 "${ARIA_STALL[@]}" \
                 --allow-overwrite=true --file-allocation=none \
                 --console-log-level=warn --summary-interval=0 \
                 -d "$(dirname "$out")" -o "$(basename "$out")" "$url"; then
@@ -230,6 +222,8 @@ PY
       echo "[fetch] aria2 failed, falling back to curl"
     fi
     http=$(curl -sSL --retry 8 --retry-delay 3 --retry-all-errors \
+             --connect-timeout "$CONNECT_TIMEOUT" \
+             --speed-limit "$STALL_BYTES" --speed-time "$STALL_SECONDS" \
              -w '%{http_code}' -o "$out" "$url") || http="000"
     verify "$http"
     ;;

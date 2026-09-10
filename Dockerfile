@@ -101,12 +101,12 @@ RUN if [ "${VERIFY_NODES}" = "1" ]; then \
 
 # Last, so a code change rebuilds and re-pulls only these layers.
 COPY models.txt /app/models.txt
-COPY scripts/fetch_model.sh scripts/fetch_models.sh /app/scripts/
+COPY scripts/fetch_model.sh scripts/fetch_models.sh scripts/check_model.py /app/scripts/
 # NOT on PYTHONPATH globally. ComfyUI imports its own top-level modules by bare
 # name, so ours sharing a name with one of its (src/comfy.py vs its `comfy`
 # package) stops it starting. entrypoint.sh sets the path for the handler only.
 COPY src/ /app/src/
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh /app/scripts/fetch_model.sh /app/scripts/fetch_models.sh
+RUN chmod +x /app/entrypoint.sh /app/scripts/fetch_model.sh /app/scripts/fetch_models.sh /app/scripts/check_model.py
 
 CMD ["/app/entrypoint.sh"]

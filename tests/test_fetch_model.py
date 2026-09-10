@@ -13,41 +13,18 @@ fail loudly and leave no file behind.
 from __future__ import annotations
 
 import http.server
-import json
 import socket
-import struct
 import subprocess
 import threading
 from pathlib import Path
 
 import pytest
 
+from conftest import TINY_MODEL, safetensors
+
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "fetch_model.sh"
 MODEL_BYTES = b"\x00" * (3 * 1024 * 1024)
 HTML = b'<!doctype html>\n<html lang="en"><head><meta charset="utf-8" /></head></html>\n'
-
-
-def safetensors(payload: bytes, metadata: dict = None, declared: int = None) -> bytes:
-    """A real safetensors file holding one tensor.
-
-    `declared` overstates the tensor's length without lengthening the body,
-    which is what a download cut off part way looks like on disk.
-    """
-    header = {"weight": {"dtype": "F32", "shape": [1, len(payload) // 4],
-                         "data_offsets": [0, declared or len(payload)]}}
-    if metadata:
-        header["__metadata__"] = metadata
-    blob = json.dumps(header).encode()
-    return struct.pack("<Q", len(blob)) + blob + payload
-
-
-# The file that crash-looped the worker: one [1, 12] tensor, so 48 bytes of
-# payload and roughly a kilobyte all in — three orders of magnitude under the
-# 1MiB floor the old check applied.
-TINY_MODEL = safetensors(b"\x00" * 48, metadata={
-    "name": "fedor_bypass",
-    "target_weight": "diffusion_model.txtfusion.projector.weight",
-})
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
