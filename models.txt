@@ -56,3 +56,13 @@ civit  https://civitai.red/api/download/models/3075498?fileId=2954554  loras/Nic
 # serves an HTML preview page, and the fetcher's verify() is what turns that
 # into a hard failure instead of a file that loads as garbage later.
 url    https://www.dropbox.com/scl/fi/tl0pbajnn5jz8gzkjmcsg/klein_snofs_v1_4.safetensors?rlkey=a77e4nq588njucfdy1nixf2dj&st=46ckvkfa&dl=1  loras/klein_snofs_v1_4.safetensors
+
+# ── v7 graph ──
+#
+# The single-photo v7 flow stacks two fixed style LoRAs under the per-persona
+# identity LoRA: FameGrid (grid/spicy look) and Fedor (a filter-bypass). Same
+# file for every persona, like the other style weights, so they are fetched
+# with the shared set rather than sent per job. Destination names are what
+# workflows/single_photo_v7.json loads them by.
+civit  https://civitai.red/api/download/models/3089754?fileId=2969273  loras/fedor_bypass.safetensors
+civit  https://civitai.red/api/download/models/3278885?fileId=3167060  loras/famegrid_spicy.safetensors

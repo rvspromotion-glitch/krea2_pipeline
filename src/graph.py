@@ -35,7 +35,7 @@ MODES = ("single", "carousel")
 #
 # v1 stays the default. It is what has been rendering, and a version that has
 # to be asked for cannot become the default by accident.
-VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6")
+VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7")
 DEFAULT_VERSION = "v1"
 
 _FILES = {
@@ -59,6 +59,13 @@ _FILES = {
     # chain behind that hero.
     ("v6", "single"):   "single_photo_v6.json",
     ("v6", "carousel"): "carousel_v6.json",
+    # v7 is a single-photo flow only: a Flux hair/look edit on the anchor, then
+    # a krea2 i2i pass with a fixed FameGrid+Fedor style stack under the
+    # per-persona identity LoRA. It carries no carousel of its own — carousels
+    # are being retired — so a v7 carousel falls back to v6's, which keeps a
+    # stray carousel job from a KeyError rather than pretending v7 has one.
+    ("v7", "single"):   "single_photo_v7.json",
+    ("v7", "carousel"): "carousel_v6.json",
 }
 
 
@@ -94,7 +101,21 @@ TITLE_FLUX_CHARACTER_LORA = "Flux character lora"
 # per-persona lookup stays unambiguous.
 TITLE_FLUX_STYLE_LORA = "Flux style LoRA"
 
+# v7 only. A Flux pass recolours/edits the scraped anchor before the krea2
+# identity pass — for Eva, "change the hair to platinum blonde" — so the LoRA,
+# which knows the persona's look, has less to fight. The instruction is
+# per-persona (a brunette persona wants a different edit), so the graph carries
+# a placeholder node and the worker writes the persona's own instruction into
+# it. Patched when the graph has the slot, skipped when it does not.
+TITLE_FLUX_EDIT = "Flux edit"
+
 SUBJECT_PLACEHOLDER = "{subject}"
+
+# v7 asks Gemini to refer to the person by the trigger word the character LoRA
+# was trained on, so the scene description it writes anchors on the same token
+# {subject} does. Older versions describe the anchor generically and never
+# carry this, so its absence is not an error.
+TRIGGER_PLACEHOLDER = "{trigger}"
 
 # Where a persona may be written. The Krea2 shot-director template has always
 # been a PrimitiveStringMultiline; v6 added a second slot in the string the
@@ -274,6 +295,26 @@ def _set_subject(graph: dict, subject: str) -> int:
     return patched
 
 
+def _set_trigger(graph: dict, trigger_word: str) -> int:
+    """Write the persona's trigger into any Gemini prompt that asks for it.
+
+    Scoped to Ask_Gemini_Batch on purpose: the only place a version has ever
+    wanted the bare trigger (rather than the full {subject}) is the shot
+    description, where "refer to the person as {trigger}" keeps Gemini's prose
+    anchored on the token the LoRA knows. A version without the placeholder is
+    left untouched — returns 0, not an error.
+    """
+    patched = 0
+    for node in graph.values():
+        if node.get("class_type") != "Ask_Gemini_Batch":
+            continue
+        for field, value in node["inputs"].items():
+            if isinstance(value, str) and TRIGGER_PLACEHOLDER in value:
+                node["inputs"][field] = value.replace(TRIGGER_PLACEHOLDER, trigger_word)
+                patched += 1
+    return patched
+
+
 def _randomise_seeds(graph: dict, rng: random.Random) -> int:
     """Every seed field, including the Gemini ones.
 
@@ -302,6 +343,7 @@ def patch(
     version: str = DEFAULT_VERSION,
     persona_reference: str | None = None,
     flux_lora_name: str | None = None,
+    flux_edit_prompt: str | None = None,
 ) -> dict:
     """Return a job-ready copy of the graph. The template on disk is untouched.
 
@@ -341,7 +383,20 @@ def patch(
                 f"flux_lora_name was given")
         graph[flux_lora_node]["inputs"]["lora_name"] = flux_lora_name
 
+    # v7's per-persona Flux edit. Same rule as the persona reference: a graph
+    # that has the slot and was handed nothing would render the look baked into
+    # the exported file (Eva's hair on every persona), so that is a hard error.
+    flux_edit_node = _optional_by_title(graph, TITLE_FLUX_EDIT)
+    if flux_edit_node is not None:
+        if not flux_edit_prompt:
+            raise GraphError(
+                f"{version}/{mode} has a {TITLE_FLUX_EDIT!r} slot but no "
+                f"flux_edit_prompt was given — it would render the edit baked "
+                f"into the exported graph")
+        graph[flux_edit_node]["inputs"]["text"] = flux_edit_prompt
+
     _set_subject(graph, subject)
+    _set_trigger(graph, trigger_word)
 
     # Every Gemini node gets the key from config; none is baked into the file.
     for nid in _by_class(graph, "Ask_Gemini_Batch"):

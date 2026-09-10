@@ -1,0 +1,577 @@
+{
+  "6": {
+    "inputs": {
+      "text": [
+        "48",
+        0
+      ],
+      "clip": [
+        "317",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "274",
+        0
+      ],
+      "vae": [
+        "210",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "48": {
+    "inputs": {
+      "value": [
+        "347",
+        0
+      ]
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Positive"
+    }
+  },
+  "128": {
+    "inputs": {
+      "lora_name": "famegrid_spicy.safetensors",
+      "strength_model": 1,
+      "model": [
+        "361",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "FameGrid style LoRA"
+    }
+  },
+  "154": {
+    "inputs": {
+      "lora_name": "krea2_turbo_lora_rank_64_bf16.safetensors",
+      "strength_model": 0.6,
+      "model": [
+        "316",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Krea 2 Turbo"
+    }
+  },
+  "155": {
+    "inputs": {
+      "lora_name": "Eva_step-002750_identity.safetensors",
+      "strength_model": 0.9,
+      "model": [
+        "154",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Character lora"
+    }
+  },
+  "210": {
+    "inputs": {
+      "vae_name": "Wan2_1_VAE_fp32.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "213": {
+    "inputs": {
+      "filename_prefix": "famegrid_v2",
+      "images": [
+        "341",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "232": {
+    "inputs": {
+      "width": 1440,
+      "height": 1920,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "265": {
+    "inputs": {
+      "eta": 0.5,
+      "sampler_name": "multistep/res_2m",
+      "scheduler": "beta57",
+      "steps": 9,
+      "steps_to_run": -1,
+      "denoise": 0.75,
+      "cfg": [
+        "282",
+        0
+      ],
+      "seed": 434198994417561,
+      "sampler_mode": "standard",
+      "bongmath": true
+    },
+    "class_type": "ClownsharKSampler_Beta",
+    "_meta": {
+      "title": "ClownsharKSampler"
+    }
+  },
+  "271": {
+    "inputs": {
+      "value": "cartoon, anime, illustration, painting, drawing, sketch, 3d render, cgi, video game, plastic skin, airbrushed, cartoon eyes, overly smooth skin, doll-like, waxy skin, freckles, blurry, out of focus, low resolution, low quality, jpeg artifacts, oversaturated, overexposed, underexposed, harsh shadows, deformed, disfigured, extra limbs, extra fingers, missing fingers, mutated hands, bad anatomy, asymmetrical eyes, cross-eyed, unnatural pose, stiff pose, mannequin, watermark, text, logo, signature, frame, border, duplicate, cloned face, symmetrical face, perfect symmetry, studio backdrop, plain background, overprocessed, HDR look, glossy filter, beauty filter, smooth skin filter, AI artifacts, uncanny valley"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Negative"
+    }
+  },
+  "272": {
+    "inputs": {
+      "text": [
+        "271",
+        0
+      ],
+      "clip": [
+        "317",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "274": {
+    "inputs": {
+      "eta": 0.5,
+      "sampler_name": "multistep/deis_3m",
+      "scheduler": "bong_tangent",
+      "steps": 2,
+      "steps_to_run": -1,
+      "denoise": 0.2,
+      "cfg": [
+        "282",
+        0
+      ],
+      "seed": 305848933711437,
+      "sampler_mode": "standard",
+      "bongmath": true,
+      "model": [
+        "128",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "272",
+        0
+      ],
+      "latent_image": [
+        "375",
+        0
+      ]
+    },
+    "class_type": "ClownsharKSampler_Beta",
+    "_meta": {
+      "title": "ClownsharKSampler"
+    }
+  },
+  "282": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "CFG"
+    }
+  },
+  "316": {
+    "inputs": {
+      "unet_name": "krea2_raw_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "317": {
+    "inputs": {
+      "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "341": {
+    "inputs": {
+      "recipe": "custom",
+      "jpeg_quality": 92,
+      "passes": 2,
+      "noise_scale": 0,
+      "sharpness": 0.7,
+      "contrast": 0.9,
+      "posterize_bits": 8,
+      "blur_radius": 0.4,
+      "pixelate_box": 1,
+      "invert": false,
+      "grayscale": false,
+      "emboss": false,
+      "edge_enhance": false,
+      "seed": 194641508576146,
+      "image": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "MoreJPEG",
+    "_meta": {
+      "title": "Realisim Enhancor"
+    }
+  },
+  "342": {
+    "inputs": {
+      "image": "danaiossen_post_7_28_2025_2_51_05 AM3686322146498703688.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Input image"
+    }
+  },
+  "344": {
+    "inputs": {
+      "prompt": "Describe this image in pixelperfect detail for use as an image generation prompt. do not describe hair color or other personal features. only output the prompt. explain the outfit in detail. if there is text, spell it out. explain the scene in detail. if there are tattoo's or piercings, prompt them away. Explain her pose in exact detail. Explain where she is looking and if her face is in frame or not. Ignore watermarks. Copy the lighting and (if present) any motion blur, or other camera interactions that affect image quality. when you describe a phone its a white iphone 16 pro with white cover, do not describe a phone if none is visible in the image. Use \"{trigger}\" to describe the person.\n\nBe ultra descriptive, use at least 1500 characters.",
+      "safety_settings": "BLOCK_NONE",
+      "response_type": "text",
+      "model": "gemini-3.1-flash-lite-preview",
+      "api_key": "",
+      "proxy": "",
+      "system_instruction": "",
+      "seed": 1116970952,
+      "temperature": 0.7,
+      "num_predict": 2202,
+      "images": [
+        "342",
+        0
+      ]
+    },
+    "class_type": "Ask_Gemini_Batch",
+    "_meta": {
+      "title": "Ask Gemini (Batch)"
+    }
+  },
+  "345": {
+    "inputs": {
+      "string_a": "famegrid, Photorealistic, {subject}",
+      "string_b": [
+        "344",
+        0
+      ],
+      "delimiter": ", "
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "Concatenate Text"
+    }
+  },
+  "347": {
+    "inputs": {
+      "source": [
+        "345",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text"
+    }
+  },
+  "361": {
+    "inputs": {
+      "lora_name": "fedor_bypass.safetensors",
+      "strength_model": 1,
+      "model": [
+        "155",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Fedor bypass LoRA"
+    }
+  },
+  "373": {
+    "inputs": {
+      "pixels": [
+        "374",
+        0
+      ],
+      "vae": [
+        "210",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "374": {
+    "inputs": {
+      "resize_type": "scale dimensions",
+      "resize_type.width": 1440,
+      "resize_type.height": 1920,
+      "resize_type.crop": "center",
+      "scale_method": "nearest-exact",
+      "input": [
+        "388",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Resize Image/Mask"
+    }
+  },
+  "375": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 71089621020444,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "beta57",
+      "start_at_step": 3,
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "128",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "272",
+        0
+      ],
+      "latent_image": [
+        "373",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "Sampler I2I"
+    }
+  },
+  "376": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "377": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "378": {
+    "inputs": {
+      "unet_name": "Flux2-Klein-9B-True-V3-int8mixedrow.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "379": {
+    "inputs": {
+      "eta": 0.5,
+      "sampler_name": "linear/euler",
+      "scheduler": "simple",
+      "steps": 4,
+      "steps_to_run": -1,
+      "denoise": 1,
+      "cfg": 1,
+      "seed": 413517656298493,
+      "sampler_mode": "standard",
+      "bongmath": true,
+      "model": [
+        "378",
+        0
+      ],
+      "positive": [
+        "385",
+        0
+      ],
+      "negative": [
+        "381",
+        0
+      ],
+      "latent_image": [
+        "384",
+        0
+      ]
+    },
+    "class_type": "ClownsharKSampler_Beta",
+    "_meta": {
+      "title": "ClownsharKSampler"
+    }
+  },
+  "380": {
+    "inputs": {
+      "text": "keep the hair and everything else exactly the same",
+      "clip": [
+        "377",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Flux edit"
+    }
+  },
+  "381": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "377",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "382": {
+    "inputs": {
+      "pixels": [
+        "342",
+        0
+      ],
+      "vae": [
+        "376",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "383": {
+    "inputs": {
+      "guidance": 3.5,
+      "conditioning": [
+        "380",
+        0
+      ]
+    },
+    "class_type": "FluxGuidance",
+    "_meta": {
+      "title": "FluxGuidance"
+    }
+  },
+  "384": {
+    "inputs": {
+      "width": [
+        "386",
+        1
+      ],
+      "height": [
+        "386",
+        2
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "385": {
+    "inputs": {
+      "conditioning": [
+        "383",
+        0
+      ],
+      "latent": [
+        "382",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "FLUX: reference 2 (persona identity)"
+    }
+  },
+  "386": {
+    "inputs": {
+      "image": [
+        "342",
+        0
+      ]
+    },
+    "class_type": "GetImageSizeAndCount",
+    "_meta": {
+      "title": "Get Image Size & Count"
+    }
+  },
+  "388": {
+    "inputs": {
+      "samples": [
+        "379",
+        0
+      ],
+      "vae": [
+        "376",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  }
+}
