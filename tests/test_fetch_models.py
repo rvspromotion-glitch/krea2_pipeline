@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import TINY_MODEL, safetensors
+
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "fetch_models.sh"
 MODEL_BYTES = b"\x00" * (2 * 1024 * 1024)
@@ -37,7 +39,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     return
                 time.sleep(0.15)
             return
-        if self.path.startswith("/model"):
+        if self.path.startswith("/tiny"):
+            body = TINY_MODEL
+        elif self.path.startswith("/model"):
             body = MODEL_BYTES
         elif self.path.startswith("/page"):
             body = HTML
@@ -192,3 +196,81 @@ def test_the_ticker_does_not_outlive_the_fetch(server, tmp_path):
 
     assert elapsed < 10, (
         f"took {elapsed:.1f}s — the ticker is holding stdout open past the fetch")
+
+
+# ── What counts as already present ──────────────────────────────────────────
+#
+# With no network volume every cold start refetches all 53G, so "present" only
+# ever applies within one container's life — but it still decides whether a
+# retry after a partial boot re-hits Civitai, and each avoidable Civitai
+# round-trip is another chance to hang.
+
+def test_a_kilobyte_model_counts_as_present(server, tmp_path):
+    """The leftover from the size floor: fedor_bypass is 1040 bytes, so a >1MiB
+    have-it test called it missing and refetched it from Civitai every boot."""
+    listing = _list(tmp_path, f"civit  {server}/tiny  loras/fedor_bypass.safetensors\n")
+    models = tmp_path / "models"
+    first = _run(listing, models)
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert (models / "loras/fedor_bypass.safetensors").read_bytes() == TINY_MODEL
+
+    result = _run(listing, models)
+
+    assert result.returncode == 0
+    assert "have fedor_bypass.safetensors" in result.stdout
+    assert "0 fetched" in result.stdout
+
+
+def test_a_truncated_file_on_disk_is_refetched(server, tmp_path):
+    """A cut-off download must not be trusted on the next start just because it
+    is large. Re-fetching is what lets a bad boot heal itself."""
+    listing = _list(tmp_path, f"civit  {server}/model  checkpoints/a.safetensors\n")
+    models = tmp_path / "models"
+    (models / "checkpoints").mkdir(parents=True)
+    (models / "checkpoints/a.safetensors").write_bytes(
+        safetensors(b"\x00" * (2 * 1024 * 1024), declared=8 * 1024 * 1024))
+
+    result = _run(listing, models)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "have a.safetensors" not in result.stdout
+    assert "1 fetched" in result.stdout
+    assert (models / "checkpoints/a.safetensors").read_bytes() == MODEL_BYTES
+
+
+# ── Nothing may wait forever ────────────────────────────────────────────────
+
+def test_every_network_call_can_give_up():
+    """The stall that ate the container: Civitai accepted the connection and
+    never answered, and the redirect-resolving curl had no timeout of any kind,
+    so the boot sat there until RunPod reaped it ~8 minutes later.
+
+    A transfer is bounded by a stall floor rather than a wall clock on purpose —
+    --max-time on a 13G download would kill legitimate fetches on a slow night.
+    """
+    script = (REPO / "scripts" / "fetch_model.sh").read_text()
+    # Comments talk about curl too; only real invocations are the subject here.
+    code = "\n".join(line for line in script.splitlines()
+                     if not line.lstrip().startswith("#"))
+
+    def invocations(command):
+        # A command position: start of line, or opening a $(...) substitution.
+        # Continuation lines are pulled in so the whole call is inspected.
+        # (line ending in a backslash)* then the final line, so a call split
+        # over several lines is inspected whole.
+        return re.findall(
+            rf"(?:^|\$\()\s*(?:if\s+)?{command} (?:[^\n]*\\\n)*[^\n]*",
+            code, re.MULTILINE)
+
+    calls = invocations("curl")
+    assert len(calls) == 3, f"expected 3 curl calls, found {len(calls)}"
+    for call in calls:
+        assert "--connect-timeout" in call, f"curl with no connect timeout:\n{call}"
+        assert ("--max-time" in call
+                or "--speed-time" in call), f"curl that can hang forever:\n{call}"
+
+    aria = invocations("aria2c")
+    assert len(aria) == 2, f"expected 2 aria2 calls, found {len(aria)}"
+    for call in aria:
+        assert "ARIA_STALL" in call or "--lowest-speed-limit" in call, \
+            f"aria2 with no stall guard:\n{call}"

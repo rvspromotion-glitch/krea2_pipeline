@@ -22,6 +22,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIST="${MODELS_LIST:-${HERE}/../models.txt}"
 MODELS_DIR="${MODELS_DIR:-/comfyui/models}"
 FETCH_ONE="${HERE}/fetch_model.sh"
+CHECK_MODEL="${HERE}/check_model.py"
 MIN_BYTES=1048576
 
 # Enough to overlap the slow host with the fast ones without hammering either.
@@ -33,9 +34,22 @@ PROGRESS_EVERY="${MODEL_FETCH_PROGRESS_EVERY:-15}"
 
 log() { echo "[models] $*"; }
 
+# Present means complete, not merely large. A size floor got this wrong in both
+# directions: fedor_bypass is 1040 bytes of real model, so it never counted as
+# present and was re-fetched from Civitai on every boot — and with no volume
+# attached, every avoidable Civitai round-trip is another chance to hang. A
+# truncated file reports state 2 and is re-fetched rather than trusted, which is
+# what lets a cut-off download heal itself on the next start.
 have_it() {
   local path="$1"
-  [ -f "$path" ] && [ "$(stat -c %s "$path")" -ge "$MIN_BYTES" ]
+  [ -f "$path" ] || return 1
+  local state=0
+  python3 "$CHECK_MODEL" "$path" || state=$?
+  case "$state" in
+    0) return 0 ;;
+    2) return 1 ;;
+    *) [ "$(stat -c %s "$path")" -ge "$MIN_BYTES" ] ;;
+  esac
 }
 
 if [ ! -f "$LIST" ]; then
@@ -118,9 +132,41 @@ if [ "${#pids[@]}" -gt 0 ]; then
   trap 'rm -f "$TICK_FLAG"' EXIT
 fi
 
+# Reap in the order they finish, not the order they were listed. `wait` on one
+# pid at a time blocks the whole report behind whichever file is slowest: when
+# Realism_engine hung, the four downloads that had already finished after it in
+# the list could not print, so the log showed ten of fifteen done and read as
+# five simultaneous failures instead of one stuck file. `wait -n` returns as
+# each child exits, so the last name still outstanding is the one to blame.
+declare -A pending=()
+for i in "${!pids[@]}"; do pending["${pids[$i]}"]="$i"; done
+
+# `wait -n -p VAR <pids>` needs bash 5.1. Listing the pids matters as much as
+# -p does: a bare `wait -n` would also reap the ticker, which is a child too.
+# Where it is unavailable the old list order is used — that is only a reporting
+# nicety, correctness never depended on the order these are reaped in.
+by_completion=0
+if [ "${BASH_VERSINFO[0]}" -gt 5 ] ||
+   { [ "${BASH_VERSINFO[0]}" -eq 5 ] && [ "${BASH_VERSINFO[1]}" -ge 1 ]; }; then
+  by_completion=1
+fi
+
 failed=0
-for i in "${!pids[@]}"; do
-  if wait "${pids[$i]}"; then
+while [ "${#pending[@]}" -gt 0 ]; do
+  finished=""
+  code=0
+  if [ "$by_completion" = 1 ]; then
+    wait -n -p finished "${!pending[@]}" || code=$?
+  fi
+  if [ -z "$finished" ] || [ -z "${pending[$finished]:-}" ]; then
+    for pid in "${!pending[@]}"; do finished="$pid"; break; done
+    code=0
+    wait "$finished" || code=$?
+  fi
+
+  i="${pending[$finished]}"
+  unset 'pending[$finished]'
+  if [ "$code" -eq 0 ]; then
     tail -n 2 "${logs[$i]}" | sed 's/^/[models] /'
   else
     failed=$((failed + 1))
