@@ -117,9 +117,15 @@ def test_every_model_the_graphs_load_is_in_the_model_list():
                       graph_mod.TITLE_FLUX_CHARACTER_LORA}
     per_job_slots = set()
     for key, name in graph_mod._FILES.items():
-        for node in json.loads((WORKFLOWS / name).read_text()).values():
-            if (node.get("_meta") or {}).get("title") in per_job_titles:
-                per_job_slots.add(node["inputs"]["lora_name"])
+        graph = json.loads((WORKFLOWS / name).read_text())
+        for nid, node in graph.items():
+            if (node.get("_meta") or {}).get("title") not in per_job_titles:
+                continue
+            # Through the accessor, not inputs["lora_name"]: v8 keeps the
+            # persona's LoRA in an rgthree Power Lora Loader row, which has no
+            # such field.
+            container, field = graph_mod._character_lora_slot(graph, nid)
+            per_job_slots.add(container[field])
 
     unaccounted = referenced - fetched - per_job_slots
     assert not unaccounted, (

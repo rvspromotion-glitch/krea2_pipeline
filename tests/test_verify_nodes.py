@@ -37,9 +37,17 @@ def _fake_comfy(tmp_path: Path, *, packages: dict[str, list[str]],
     for name, class_types in packages.items():
         pkg = custom / name
         pkg.mkdir()
+        # Class names are generated, not taken from the node type: ComfyUI keys
+        # NODE_CLASS_MAPPINGS by display string, and plenty of those are not
+        # valid Python identifiers — "Power Lora Loader (rgthree)" and
+        # "easy humanSegmentation" both appear in the shipped graphs. Writing
+        # them as class names made this fixture a SyntaxError rather than a
+        # registry, and the test then passed or failed for the wrong reason.
         (pkg / "__init__.py").write_text(
-            "".join(f"class {t}: pass\n" for t in class_types) +
-            "MAPPINGS = {" + ", ".join(f"{t!r}: {t}" for t in class_types) + "}\n"
+            "".join(f"class Node{i}: pass\n" for i, _ in enumerate(class_types)) +
+            "MAPPINGS = {"
+            + ", ".join(f"{t!r}: Node{i}" for i, t in enumerate(class_types))
+            + "}\n"
         )
     for name in empty_packages:
         pkg = custom / name
@@ -155,7 +163,18 @@ def test_fails_when_a_node_is_missing(tmp_path):
     assert result.returncode == 1
     assert "FAILED" in result.stdout
     assert required[-1] in result.stdout          # names the node
-    assert "single_photo.json" in result.stdout or "carousel.json" in result.stdout
+
+    # And names a workflow that actually wants it, so the build log says where
+    # to look. Derived rather than hardcoded to two filenames: which graph
+    # holds the alphabetically-last node type changes as versions are added,
+    # and the assertion is about the report being actionable, not about v1.
+    import json
+    wanted = {path.name for path in WORKFLOWS.glob("*.json")
+              if any(n.get("class_type") == required[-1]
+                     for n in json.loads(path.read_text()).values())}
+    assert wanted, f"nothing references {required[-1]!r}"
+    assert any(name in result.stdout for name in wanted), \
+        f"the failure should name one of {sorted(wanted)}"
 
 
 def test_reports_which_package_supplies_which_node(complete):
