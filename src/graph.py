@@ -35,7 +35,7 @@ MODES = ("single", "carousel")
 #
 # v1 stays the default. It is what has been rendering, and a version that has
 # to be asked for cannot become the default by accident.
-VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7")
+VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8")
 DEFAULT_VERSION = "v1"
 
 _FILES = {
@@ -66,6 +66,12 @@ _FILES = {
     # stray carousel job from a KeyError rather than pretending v7 has one.
     ("v7", "single"):   "single_photo_v7.json",
     ("v7", "carousel"): "carousel_v6.json",
+    # v8 drops Flux entirely: one krea2 chain off the anchor, a three-LoRA
+    # stack in an rgthree Power Lora Loader, and a depth-masked realism pass
+    # from ACG_Realism_Nodes at the end. Single only, like v7, so a stray
+    # carousel job falls back to v6's rather than dying on a KeyError.
+    ("v8", "single"):   "single_photo_v8.json",
+    ("v8", "carousel"): "carousel_v6.json",
 }
 
 
@@ -116,6 +122,19 @@ SUBJECT_PLACEHOLDER = "{subject}"
 # {subject} does. Older versions describe the anchor generically and never
 # carry this, so its absence is not an error.
 TRIGGER_PLACEHOLDER = "{trigger}"
+
+# The persona's look, for prompts that state it separately from the trigger.
+# v8's shot-director and system prompts both had Eva's hair and eye colour
+# written into the prose, in three places between them.
+DESCRIPTION_PLACEHOLDER = "{description}"
+
+# rgthree's Power Lora Loader (v8) keeps its rows as nested dicts, so there is
+# no lora_name field to write. The row carrying the persona is marked with this
+# instead of being found by position: a stack gets reordered while someone is
+# tuning strengths, and binding to the wrong row would quietly render another
+# persona's face for a week — the failure this whole module is arranged to
+# prevent.
+CHARACTER_PLACEHOLDER = "{character}"
 
 # Where a persona may be written. The Krea2 shot-director template has always
 # been a PrimitiveStringMultiline; v6 added a second slot in the string the
@@ -257,6 +276,45 @@ def _by_class(graph: dict, class_type: str, minimum: int = 1) -> list[str]:
 
 # ── Patching ─────────────────────────────────────────────────────────────────
 
+def _character_lora_slot(graph: dict, node_id: str):
+    """Where the persona's LoRA lives in this node, as (container, key).
+
+    Two shapes. Every version through v7 loads it with a LoraLoaderModelOnly,
+    which has a flat ``lora_name``. v8 stacks three LoRAs in one rgthree Power
+    Lora Loader, whose rows are nested dicts with no ``lora_name`` anywhere —
+    writing that field there would succeed, change nothing, and leave the
+    persona baked into the exported graph.
+
+    The row is named by ``_meta.character_slot`` rather than found by position
+    or by its placeholder value. Position would rebind to the wrong row the
+    first time someone reorders the stack while tuning strengths, and the
+    placeholder only exists until the first patch replaces it — this has to
+    keep working on a graph that has already been patched, which is exactly
+    what describe() reads.
+    """
+    node = graph[node_id]
+    inputs = node["inputs"]
+    if "lora_name" in inputs:
+        return inputs, "lora_name"
+
+    meta = node.get("_meta") or {}
+    slot = meta.get("character_slot")
+    row = inputs.get(slot) if slot else None
+    if not isinstance(row, dict) or "lora" not in row:
+        raise GraphError(
+            f"{meta.get('title', node_id)!r} has no lora_name and no usable "
+            f"_meta.character_slot (got {slot!r}) — without it the persona's "
+            f"LoRA would not be the one that renders")
+    return row, "lora"
+
+
+def character_lora_of(graph: dict) -> str:
+    """The persona LoRA currently in the graph, whichever shape holds it."""
+    node_id = _by_title(graph, TITLE_CHARACTER_LORA)[0]
+    container, key = _character_lora_slot(graph, node_id)
+    return container[key]
+
+
 def _set_subject(graph: dict, subject: str) -> int:
     """Substitute the persona into every prompt slot carrying the placeholder.
 
@@ -295,22 +353,41 @@ def _set_subject(graph: dict, subject: str) -> int:
     return patched
 
 
-def _set_trigger(graph: dict, trigger_word: str) -> int:
-    """Write the persona's trigger into any Gemini prompt that asks for it.
+# Where a bare trigger or description may be written. Ask_Gemini_Batch holds
+# v7's inline shot-director prompt; v8 moved most of that prose into a
+# PrimitiveStringMultiline wired in as Gemini's system_instruction, which is a
+# subject node type — so a scan limited to Gemini nodes would have left "Refer
+# to her as `3lm1ra`" sitting in every persona's system prompt.
+PROMPT_NODE_TYPES = ("Ask_Gemini_Batch",) + SUBJECT_NODE_TYPES
 
-    Scoped to Ask_Gemini_Batch on purpose: the only place a version has ever
-    wanted the bare trigger (rather than the full {subject}) is the shot
-    description, where "refer to the person as {trigger}" keeps Gemini's prose
-    anchored on the token the LoRA knows. A version without the placeholder is
-    left untouched — returns 0, not an error.
+
+def _set_trigger(graph: dict, trigger_word: str, description: str = "") -> int:
+    """Write the persona's trigger and look into the prompts that ask for them.
+
+    Separate from {subject} because these prompts want the two facts apart: the
+    trigger anchors Gemini's prose on the token the LoRA knows ("refer to her
+    as X"), while the description states the look to keep ("always include
+    ..."). v8 needs both, in three places across two nodes.
+
+    A version carrying neither placeholder is left untouched — returns 0, not
+    an error, because v1 through v6 have nothing of the kind.
     """
+    replacements = [(TRIGGER_PLACEHOLDER, trigger_word)]
+    if description:
+        replacements.append((DESCRIPTION_PLACEHOLDER, description))
+
     patched = 0
     for node in graph.values():
-        if node.get("class_type") != "Ask_Gemini_Batch":
+        if node.get("class_type") not in PROMPT_NODE_TYPES:
             continue
         for field, value in node["inputs"].items():
-            if isinstance(value, str) and TRIGGER_PLACEHOLDER in value:
-                node["inputs"][field] = value.replace(TRIGGER_PLACEHOLDER, trigger_word)
+            if not isinstance(value, str):
+                continue
+            updated = value
+            for placeholder, replacement in replacements:
+                updated = updated.replace(placeholder, replacement)
+            if updated != value:
+                node["inputs"][field] = updated
                 patched += 1
     return patched
 
@@ -361,7 +438,8 @@ def patch(
     graph[image_node]["inputs"]["image"] = image_filename
 
     lora_node = _by_title(graph, TITLE_CHARACTER_LORA)[0]
-    graph[lora_node]["inputs"]["lora_name"] = lora_name
+    container, key = _character_lora_slot(graph, lora_node)
+    container[key] = lora_name
 
     # v3's two extra per-persona slots. A graph that has the slot and was given
     # nothing to put in it is a hard error: it would otherwise render whatever
@@ -396,7 +474,7 @@ def patch(
         graph[flux_edit_node]["inputs"]["text"] = flux_edit_prompt
 
     _set_subject(graph, subject)
-    _set_trigger(graph, trigger_word)
+    _set_trigger(graph, trigger_word, description.strip())
 
     # Every Gemini node gets the key from config; none is baked into the file.
     for nid in _by_class(graph, "Ask_Gemini_Batch"):
@@ -421,6 +499,6 @@ def describe(graph: dict) -> dict[str, Any]:
     return {
         "nodes": len(graph),
         "image": graph[_by_title(graph, TITLE_INPUT_IMAGE)[0]]["inputs"]["image"],
-        "lora": graph[_by_title(graph, TITLE_CHARACTER_LORA)[0]]["inputs"]["lora_name"],
+        "lora": character_lora_of(graph),
         "gemini_nodes": len(_by_class(graph, "Ask_Gemini_Batch")),
     }

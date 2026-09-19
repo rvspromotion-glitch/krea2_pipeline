@@ -15,6 +15,9 @@ BatchnodeI9                 rvspromotion-glitch/BatchnodeI9         HEAD
 ComfyUI-KJNodes             kijai/ComfyUI-KJNodes                   HEAD
 ComfyUI-Impact-Pack         ltdrdata/ComfyUI-Impact-Pack            HEAD
 comfyui-krea2edit           lbouaraba/comfyui-krea2edit             HEAD
+# v8's closing pass: ACGRealismStack does the depth-masked grain, chromatic
+# aberration, contact shadows and defocus in one node.
+ACG_Realism_Nodes           rvspromotion-glitch/ACG_Realism_Nodes   HEAD
 
 # Carried from the pod the workflows were authored on. One of these supplies
 # MoreJPEG; the rest are almost certainly dead weight on these two graphs.

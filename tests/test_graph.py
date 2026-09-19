@@ -253,11 +253,12 @@ def test_the_shipped_workflows_still_carry_the_sage_node():
     """If this ever fails the graphs changed and the rest of this section is
     testing nothing — which is the quiet way for the crash to come back."""
     for key, name in graph_mod._FILES.items():
-        # v7 was exported without SageAttention. It makes no difference on the
-        # endpoint this runs on — Blackwell, where sage's kernels do not compile
-        # and every graph's sage node is bypassed anyway — so its absence is
-        # intentional, not the silent graph change this guards against.
-        if name == "single_photo_v7.json":
+        # v7 and v8 were exported without SageAttention. It makes no difference
+        # on the endpoint this runs on — Blackwell, where sage's kernels do not
+        # compile and every graph's sage node is bypassed anyway — so the
+        # absence is intentional, not the silent change this guards against.
+        # v7 and v8 were exported without it.
+        if name in ("single_photo_v7.json", "single_photo_v8.json"):
             continue
         raw = json.loads((ROOT / "workflows" / name).read_text())
         assert any(n["class_type"] == "PathchSageAttentionKJ" for n in raw.values()), key
@@ -485,7 +486,7 @@ def test_every_version_takes_the_same_job_variables(version, mode):
     image = graph_mod._by_title(graph, graph_mod.TITLE_INPUT_IMAGE)[0]
     lora = graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]
     assert graph[image]["inputs"]["image"] == "ref.png"
-    assert graph[lora]["inputs"]["lora_name"] == "Chloe_v1.safetensors"
+    assert graph_mod.character_lora_of(graph) == "Chloe_v1.safetensors"
     assert graph_mod.output_node(graph)
 
     # The subject lands in a subject node — a PrimitiveStringMultiline for
@@ -1115,3 +1116,114 @@ def test_no_persona_is_baked_into_a_prompt(mode, version):
              if isinstance(value, str)
              and any(name in value for name in ("3lm1ra", "Eva", "Chloe", "ch10e"))]
     assert baked == [], f"a persona is written into {baked}"
+
+
+# ── v8: the persona lives in an rgthree Power Lora Loader ────────────────────
+#
+# Every version through v7 loads the character LoRA with a LoraLoaderModelOnly,
+# which has a flat lora_name. v8 stacks three LoRAs in one Power Lora Loader,
+# whose rows are nested dicts with no lora_name anywhere. Writing that field
+# there succeeds, changes nothing, and renders Eva for every persona — silently,
+# for as long as nobody looks closely at the faces.
+
+V8_JOB = dict(image_filename="ref.png", lora_name="Chloe_v1.safetensors",
+              trigger_word="ch10e",
+              description="young woman with red hair, green eyes",
+              gemini_api_key="KEY", seed=7, version="v8")
+
+
+def _v8():
+    return graph_mod.patch("single", **V8_JOB)
+
+
+def test_v8_patches_the_persona_into_the_power_loader_row():
+    graph = _v8()
+
+    node = graph[graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]]
+    assert node["class_type"] == "Power Lora Loader (rgthree)"
+    assert node["inputs"]["lora_1"]["lora"] == "Chloe_v1.safetensors"
+    assert "lora_name" not in node["inputs"], \
+        "a stray lora_name would mean the write went somewhere ComfyUI ignores"
+
+
+def test_v8_leaves_the_fixed_style_loras_alone():
+    """Only row one is the persona's. The style stack is the same every job."""
+    graph = _v8()
+
+    rows = graph[graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]]["inputs"]
+    assert rows["lora_2"]["lora"] == "famegrid_spicy.safetensors"
+    assert rows["lora_3"]["lora"] == "fedor_bypass.safetensors"
+
+
+def test_v8_keeps_the_character_strength_it_was_shipped_with():
+    graph = _v8()
+    rows = graph[graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]]["inputs"]
+    assert rows["lora_1"]["strength"] == 0.85
+
+
+def test_the_character_lora_reads_back_after_patching():
+    """describe() logs it on every job, so the accessor has to work on a graph
+    whose placeholder has already been consumed."""
+    assert graph_mod.character_lora_of(_v8()) == "Chloe_v1.safetensors"
+    assert graph_mod.describe(_v8())["lora"] == "Chloe_v1.safetensors"
+
+
+def test_a_power_loader_without_a_marked_row_fails_loudly():
+    """Rather than picking a row and hoping."""
+    graph = graph_mod.load("single", "v8")
+    node_id = graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]
+    del graph[node_id]["_meta"]["character_slot"]
+
+    with pytest.raises(graph_mod.GraphError, match="character_slot"):
+        graph_mod._character_lora_slot(graph, node_id)
+
+
+# ── v8: no persona may survive in the prompts ───────────────────────────────
+
+PERSONA_TERMS = ("3lm1ra", "platinum blond", "grey eyes", "grey iris")
+
+
+def test_v8_carries_no_trace_of_the_persona_it_was_authored_with():
+    """The exported graph had Eva's trigger in four nodes and her hair and eyes
+    in two more. Any one left behind renders Chloe with Eva's description."""
+    blob = json.dumps(_v8()).lower()
+
+    for term in PERSONA_TERMS:
+        assert term not in blob, f"{term!r} survived into a patched v8 graph"
+
+
+def test_v8_writes_the_persona_into_all_four_places():
+    graph = _v8()
+    blob = json.dumps(graph)
+
+    assert "ch10e" in blob
+    assert "young woman with red hair, green eyes" in blob
+    # The concat prefix keeps its fixed style token alongside the subject.
+    concat = [n for n in graph.values() if n["class_type"] == "StringConcatenate"][0]
+    assert concat["inputs"]["string_a"] == \
+        "Famegrid, ch10e, young woman with red hair, green eyes"
+
+
+def test_v8_leaves_no_placeholder_unfilled():
+    blob = json.dumps(_v8())
+
+    for token in ("{character}", "{subject}", "{trigger}", "{description}"):
+        assert token not in blob, f"{token} was never substituted"
+
+
+def test_the_system_prompt_gets_the_persona_too():
+    """It is a PrimitiveStringMultiline wired in as Gemini's system_instruction,
+    so a substitution scoped to Ask_Gemini_Batch nodes would have missed it."""
+    graph = _v8()
+
+    system = [n for n in graph.values()
+              if (n.get("_meta") or {}).get("title") == "System prompt (Grid)"][0]
+    value = system["inputs"]["value"]
+    assert "ch10e" in value
+    assert "young woman with red hair, green eyes" in value
+
+
+def test_v8_ends_in_a_save_image_the_worker_can_read():
+    """collect_images reads outputs[node]["images"], which is SaveImage's shape."""
+    graph = _v8()
+    assert graph[graph_mod.output_node(graph)]["class_type"] == "SaveImage"

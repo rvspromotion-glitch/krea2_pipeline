@@ -64,5 +64,9 @@ url    https://www.dropbox.com/scl/fi/tl0pbajnn5jz8gzkjmcsg/klein_snofs_v1_4.saf
 # file for every persona, like the other style weights, so they are fetched
 # with the shared set rather than sent per job. Destination names are what
 # workflows/single_photo_v7.json loads them by.
-civit  https://civitai.red/api/download/models/3089754?fileId=2969273  loras/fedor_bypass.safetensors
-civit  https://civitai.red/api/download/models/3278885?fileId=3167060  loras/famegrid_spicy.safetensors
+# v8's realism pass masks by depth. The node downloads this itself on first
+# use, which would put an HF fetch in the middle of a render rather than in
+# the cold start where every other weight is paid for.
+hf     Kijai/DepthAnythingV2-safetensors  depth_anything_v2_vitb_fp16.safetensors  depthanything/depth_anything_v2_vitb_fp16.safetensors
+url    https://www.dropbox.com/scl/fi/owhv7h234kdjw9fn5u5it/fedor_bypass.safetensors?rlkey=ly0uqr3wwnkhq7jvs70vebd45&st=asbi6ww9&dl=1  loras/fedor_bypass.safetensors
+url    https://www.dropbox.com/scl/fi/2fg4ncucvju6pdx842mrd/famegrid_spicy.safetensors?rlkey=gbpkze4gq4542laradd6f95ih&st=hwwxfnd7&dl=1  loras/famegrid_spicy.safetensors
