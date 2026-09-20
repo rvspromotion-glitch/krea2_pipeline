@@ -16,7 +16,7 @@
       "lora_1": {
         "on": true,
         "lora": "{character}",
-        "strength": 0.85
+        "strength": 0.95
       },
       "lora_2": {
         "on": true,

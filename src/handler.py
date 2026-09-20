@@ -178,6 +178,17 @@ def run_job(payload: dict) -> dict:
     # Optional here — the graph is what decides whether it is required, and
     # graph.patch() raises if a v7 graph is handed nothing.
     flux_edit_prompt = (payload.get("flux_edit_prompt") or "").strip() or None
+
+    # Per-persona LoRA strength. Absent or blank means "leave the graph alone",
+    # which is what every job sent before this existed — retuning a drifting
+    # LoRA is a Radar field now rather than an image rebuild.
+    raw_strength = payload.get("lora_strength")
+    lora_strength = None
+    if raw_strength not in (None, ""):
+        try:
+            lora_strength = float(raw_strength)
+        except (TypeError, ValueError):
+            raise ValueError(f"lora_strength must be a number, got {raw_strength!r}")
     seed = payload.get("seed")
 
     comfy.wait_until_ready()
@@ -203,6 +214,7 @@ def run_job(payload: dict) -> dict:
         persona_reference=uploaded_persona,
         flux_lora_name=flux_lora_name,
         flux_edit_prompt=flux_edit_prompt,
+        lora_strength=lora_strength,
     )
     log.info("patched %s/%s graph: %s", version, mode, graph_mod.describe(job_graph))
 
