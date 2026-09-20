@@ -1155,10 +1155,20 @@ def test_v8_leaves_the_fixed_style_loras_alone():
     assert rows["lora_3"]["lora"] == "fedor_bypass.safetensors"
 
 
-def test_v8_keeps_the_character_strength_it_was_shipped_with():
+def test_patching_the_persona_does_not_disturb_its_strength():
+    """Read from the shipped file rather than pinned to a number. Strength is a
+    tuning knob that moves whenever the LoRA is retrained; what must not move is
+    the patcher writing the name and leaving everything else in the row alone.
+    A hardcoded value here would just fail on every retune."""
+    shipped = json.loads(
+        (ROOT / "workflows" / "single_photo_v8.json").read_text())
+    expected = shipped["221"]["inputs"]["lora_1"]
+
     graph = _v8()
-    rows = graph[graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]]["inputs"]
-    assert rows["lora_1"]["strength"] == 0.85
+    row = graph[graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]]["inputs"]["lora_1"]
+
+    assert row["strength"] == expected["strength"]
+    assert row["on"] is expected["on"]
 
 
 def test_the_character_lora_reads_back_after_patching():
