@@ -136,6 +136,11 @@ DESCRIPTION_PLACEHOLDER = "{description}"
 # prevent.
 CHARACTER_PLACEHOLDER = "{character}"
 
+# What a per-persona strength may be. Open enough to cover retuning a LoRA that
+# drifts (0.95 replaced 0.85 within a day of v8 shipping) and closed enough that
+# a typed 95 for 0.95 fails at job start rather than rendering a day of noise.
+CHARACTER_STRENGTH_RANGE = (0.0, 3.0)
+
 # Where a persona may be written. The Krea2 shot-director template has always
 # been a PrimitiveStringMultiline; v6 added a second slot in the string the
 # Flux prompt is concatenated from. See _set_subject.
@@ -308,6 +313,32 @@ def _character_lora_slot(graph: dict, node_id: str):
     return row, "lora"
 
 
+def _set_character_strength(container: dict, strength: float, where: str) -> None:
+    """Retune the persona's LoRA without rebuilding the worker image.
+
+    Both node shapes keep the strength beside the name — ``strength_model`` on
+    a LoraLoaderModelOnly, ``strength`` in a Power Lora Loader row — so the
+    field is found by name rather than by version. A plain LoraLoader would add
+    ``strength_clip``; matching on the substring means that keeps working
+    without a third branch.
+    """
+    low, high = CHARACTER_STRENGTH_RANGE
+    try:
+        value = float(strength)
+    except (TypeError, ValueError):
+        raise GraphError(f"lora_strength must be a number, got {strength!r}")
+    if not low <= value <= high:
+        raise GraphError(
+            f"lora_strength {value} is outside {low}–{high} — a character LoRA "
+            f"this far out is a typo, not a setting")
+
+    keys = [k for k in container if "strength" in k]
+    if not keys:
+        raise GraphError(f"{where} has no strength field to set")
+    for key in keys:
+        container[key] = value
+
+
 def character_lora_of(graph: dict) -> str:
     """The persona LoRA currently in the graph, whichever shape holds it."""
     node_id = _by_title(graph, TITLE_CHARACTER_LORA)[0]
@@ -421,6 +452,7 @@ def patch(
     persona_reference: str | None = None,
     flux_lora_name: str | None = None,
     flux_edit_prompt: str | None = None,
+    lora_strength: float | None = None,
 ) -> dict:
     """Return a job-ready copy of the graph. The template on disk is untouched.
 
@@ -440,6 +472,12 @@ def patch(
     lora_node = _by_title(graph, TITLE_CHARACTER_LORA)[0]
     container, key = _character_lora_slot(graph, lora_node)
     container[key] = lora_name
+
+    # Optional on purpose: a job that says nothing keeps the strength the graph
+    # was shipped with, so every version behaves exactly as before unless a
+    # persona has been given a value of its own.
+    if lora_strength is not None:
+        _set_character_strength(container, lora_strength, f"{version}/{mode}")
 
     # v3's two extra per-persona slots. A graph that has the slot and was given
     # nothing to put in it is a hard error: it would otherwise render whatever

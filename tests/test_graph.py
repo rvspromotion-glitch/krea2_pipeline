@@ -1237,3 +1237,62 @@ def test_v8_ends_in_a_save_image_the_worker_can_read():
     """collect_images reads outputs[node]["images"], which is SaveImage's shape."""
     graph = _v8()
     assert graph[graph_mod.output_node(graph)]["class_type"] == "SaveImage"
+
+
+# ── Per-persona LoRA strength ───────────────────────────────────────────────
+#
+# Retuning a drifting character LoRA used to mean editing the workflow and
+# rebuilding the image. It is a persona field now, so the two node shapes both
+# have to take it: strength_model on a LoraLoaderModelOnly (v1–v7), strength in
+# a Power Lora Loader row (v8).
+
+def _strength_of(graph):
+    node_id = graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]
+    container, _ = graph_mod._character_lora_slot(graph, node_id)
+    return [container[k] for k in container if "strength" in k]
+
+
+@pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
+def test_a_persona_strength_reaches_every_version(version, mode):
+    graph = graph_mod.patch(mode, **{**_job_kwargs(version, mode),
+                                     "lora_strength": 0.72})
+
+    assert _strength_of(graph) == [0.72], version
+
+
+@pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
+def test_sending_nothing_keeps_the_shipped_strength(version, mode):
+    """Every job before this field existed sent nothing, so nothing must move."""
+    shipped = _strength_of(graph_mod.load(mode, version))
+
+    graph = graph_mod.patch(mode, **_job_kwargs(version, mode))
+
+    assert _strength_of(graph) == shipped, version
+
+
+def test_a_typo_is_refused_rather_than_rendered():
+    """95 for 0.95 would render a day of noise before anyone looked."""
+    for bad in (95, -1, 3.5):
+        with pytest.raises(graph_mod.GraphError, match="outside"):
+            graph_mod.patch("single", **{**V8_JOB, "lora_strength": bad})
+
+
+def test_a_non_number_is_refused():
+    with pytest.raises(graph_mod.GraphError, match="must be a number"):
+        graph_mod.patch("single", **{**V8_JOB, "lora_strength": "strong"})
+
+
+def test_the_ends_of_the_range_are_allowed():
+    """Zero is a legitimate way to switch the persona off for a comparison."""
+    for ok in graph_mod.CHARACTER_STRENGTH_RANGE:
+        graph = graph_mod.patch("single", **{**V8_JOB, "lora_strength": ok})
+        assert _strength_of(graph) == [float(ok)]
+
+
+def test_the_strength_does_not_touch_the_style_loras():
+    graph = graph_mod.patch("single", **{**V8_JOB, "lora_strength": 0.5})
+
+    rows = graph[graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]]["inputs"]
+    assert rows["lora_1"]["strength"] == 0.5
+    assert rows["lora_2"]["strength"] == 1        # famegrid
+    assert rows["lora_3"]["strength"] == 4        # fedor
