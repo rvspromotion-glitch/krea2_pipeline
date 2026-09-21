@@ -182,13 +182,19 @@ def run_job(payload: dict) -> dict:
     # Per-persona LoRA strength. Absent or blank means "leave the graph alone",
     # which is what every job sent before this existed — retuning a drifting
     # LoRA is a Radar field now rather than an image rebuild.
-    raw_strength = payload.get("lora_strength")
-    lora_strength = None
-    if raw_strength not in (None, ""):
+    def _strength(field):
+        raw = payload.get(field)
+        if raw in (None, ""):
+            return None
         try:
-            lora_strength = float(raw_strength)
+            return float(raw)
         except (TypeError, ValueError):
-            raise ValueError(f"lora_strength must be a number, got {raw_strength!r}")
+            raise ValueError(f"{field} must be a number, got {raw!r}")
+
+    lora_strength = _strength("lora_strength")
+    # v9 applies the persona twice, at strengths tuned apart.
+    lora_strength_detail = _strength("lora_strength_detail")
+    eye_colour = (payload.get("eye_colour") or "").strip()
     seed = payload.get("seed")
 
     comfy.wait_until_ready()
@@ -215,6 +221,8 @@ def run_job(payload: dict) -> dict:
         flux_lora_name=flux_lora_name,
         flux_edit_prompt=flux_edit_prompt,
         lora_strength=lora_strength,
+        lora_strength_detail=lora_strength_detail,
+        eye_colour=eye_colour,
     )
     log.info("patched %s/%s graph: %s", version, mode, graph_mod.describe(job_graph))
 

@@ -35,7 +35,7 @@ MODES = ("single", "carousel")
 #
 # v1 stays the default. It is what has been rendering, and a version that has
 # to be asked for cannot become the default by accident.
-VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8")
+VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9")
 DEFAULT_VERSION = "v1"
 
 _FILES = {
@@ -72,6 +72,11 @@ _FILES = {
     # carousel job falls back to v6's rather than dying on a KeyError.
     ("v8", "single"):   "single_photo_v8.json",
     ("v8", "carousel"): "carousel_v6.json",
+    # v9 runs the krast checkpoint and applies the persona's LoRA twice — a
+    # first pass through the Power Lora Loader and a second on the detail
+    # sampler, at strengths tuned apart. Single only; carousel falls back.
+    ("v9", "single"):   "single_photo_v9.json",
+    ("v9", "carousel"): "carousel_v6.json",
 }
 
 
@@ -93,6 +98,13 @@ def normalise_version(raw: str | None) -> str:
 # titles); ids are not.
 TITLE_INPUT_IMAGE = "Input image"
 TITLE_CHARACTER_LORA = "Character lora"
+
+# v9 loads the persona twice: once for the first pass and again on the detail
+# sampler, at strengths tuned apart (0.65 and 0.9 as shipped). Both carry the
+# same file, so both must be patched — leaving the second would put the
+# authoring persona's identity into every detail pass, which is the same silent
+# wrong-face failure as getting the row wrong, just one node further along.
+TITLE_CHARACTER_LORA_DETAIL = "Character lora detail"
 
 # v3 only. Flux edits the scraped frame into the persona, so it needs the
 # persona's own face as a second reference and its own LoRA — a Krea2 LoRA
@@ -127,6 +139,19 @@ TRIGGER_PLACEHOLDER = "{trigger}"
 # v8's shot-director and system prompts both had Eva's hair and eye colour
 # written into the prose, in three places between them.
 DESCRIPTION_PLACEHOLDER = "{description}"
+
+# The persona's eye colour, stated separately because v9's prompts use it on
+# its own ("whenever referring to her eyes, use ...") rather than folded into
+# the look.
+EYE_PLACEHOLDER = "{eye_colour}"
+
+# v9's graphs were written with longer names for the same three things. Both
+# spellings are accepted rather than rewritten on import: these are typed by
+# hand in ComfyUI, and a re-export would otherwise silently stop substituting.
+PLACEHOLDER_ALIASES = {
+    "{triggerword}":    TRIGGER_PLACEHOLDER,
+    "{subject_traits}": DESCRIPTION_PLACEHOLDER,
+}
 
 # rgthree's Power Lora Loader (v8) keeps its rows as nested dicts, so there is
 # no lora_name field to write. The row carrying the persona is marked with this
@@ -379,8 +404,6 @@ def _set_subject(graph: dict, subject: str) -> int:
             # brace would make str.format raise.
             node["inputs"][field] = value.replace(SUBJECT_PLACEHOLDER, subject)
             patched += 1
-    if patched == 0:
-        raise GraphError("no prompt template contained the {subject} placeholder")
     return patched
 
 
@@ -392,7 +415,8 @@ def _set_subject(graph: dict, subject: str) -> int:
 PROMPT_NODE_TYPES = ("Ask_Gemini_Batch",) + SUBJECT_NODE_TYPES
 
 
-def _set_trigger(graph: dict, trigger_word: str, description: str = "") -> int:
+def _set_trigger(graph: dict, trigger_word: str, description: str = "",
+                 eye_colour: str = "") -> int:
     """Write the persona's trigger and look into the prompts that ask for them.
 
     Separate from {subject} because these prompts want the two facts apart: the
@@ -403,9 +427,18 @@ def _set_trigger(graph: dict, trigger_word: str, description: str = "") -> int:
     A version carrying neither placeholder is left untouched — returns 0, not
     an error, because v1 through v6 have nothing of the kind.
     """
-    replacements = [(TRIGGER_PLACEHOLDER, trigger_word)]
+    canonical = {TRIGGER_PLACEHOLDER: trigger_word}
     if description:
-        replacements.append((DESCRIPTION_PLACEHOLDER, description))
+        canonical[DESCRIPTION_PLACEHOLDER] = description
+    if eye_colour:
+        canonical[EYE_PLACEHOLDER] = eye_colour
+
+    # Longhand first: replacing "{trigger}" before "{triggerword}" would leave
+    # the tail "word" welded to the persona's name.
+    replacements = [(alias, canonical[target])
+                    for alias, target in PLACEHOLDER_ALIASES.items()
+                    if target in canonical]
+    replacements += list(canonical.items())
 
     patched = 0
     for node in graph.values():
@@ -453,6 +486,8 @@ def patch(
     flux_lora_name: str | None = None,
     flux_edit_prompt: str | None = None,
     lora_strength: float | None = None,
+    lora_strength_detail: float | None = None,
+    eye_colour: str = "",
 ) -> dict:
     """Return a job-ready copy of the graph. The template on disk is untouched.
 
@@ -478,6 +513,17 @@ def patch(
     # persona has been given a value of its own.
     if lora_strength is not None:
         _set_character_strength(container, lora_strength, f"{version}/{mode}")
+
+    # v9's second pass. Same persona, same file, its own strength — the two are
+    # tuned apart, so one value written to both would flatten the distinction
+    # the graph was built around.
+    detail_node = _optional_by_title(graph, TITLE_CHARACTER_LORA_DETAIL)
+    if detail_node is not None:
+        detail_container, detail_key = _character_lora_slot(graph, detail_node)
+        detail_container[detail_key] = lora_name
+        if lora_strength_detail is not None:
+            _set_character_strength(detail_container, lora_strength_detail,
+                                    f"{version}/{mode} detail pass")
 
     # v3's two extra per-persona slots. A graph that has the slot and was given
     # nothing to put in it is a hard error: it would otherwise render whatever
@@ -511,8 +557,18 @@ def patch(
                 f"into the exported graph")
         graph[flux_edit_node]["inputs"]["text"] = flux_edit_prompt
 
-    _set_subject(graph, subject)
-    _set_trigger(graph, trigger_word, description.strip())
+    # A graph must take the persona somewhere. v1-v8 write the combined
+    # {subject}; v9 writes {triggerword}, {subject_traits} and {eye_colour}
+    # separately, so neither alone can be the check — but zero substitutions
+    # across both means a prompt that renders whoever the file was exported
+    # with, which is never right.
+    written = (_set_subject(graph, subject)
+               + _set_trigger(graph, trigger_word, description.strip(),
+                              (eye_colour or "").strip()))
+    if written == 0:
+        raise GraphError(
+            f"{version}/{mode} has no persona placeholder in any prompt — it "
+            f"would render whoever the graph was exported with")
 
     # Every Gemini node gets the key from config; none is baked into the file.
     for nid in _by_class(graph, "Ask_Gemini_Batch"):
