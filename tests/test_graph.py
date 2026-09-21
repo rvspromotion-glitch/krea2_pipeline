@@ -258,7 +258,8 @@ def test_the_shipped_workflows_still_carry_the_sage_node():
         # compile and every graph's sage node is bypassed anyway — so the
         # absence is intentional, not the silent change this guards against.
         # v7 and v8 were exported without it.
-        if name in ("single_photo_v7.json", "single_photo_v8.json"):
+        if name in ("single_photo_v7.json", "single_photo_v8.json",
+                    "single_photo_v9.json"):
             continue
         raw = json.loads((ROOT / "workflows" / name).read_text())
         assert any(n["class_type"] == "PathchSageAttentionKJ" for n in raw.values()), key
@@ -473,6 +474,9 @@ def _job_kwargs(version, mode="single"):
     if graph_mod._optional_by_title(graph, graph_mod.TITLE_PERSONA_REFERENCE):
         kwargs.update(persona_reference="chloe_face.png",
                       flux_lora_name="Chloe_klein.safetensors")
+    # v9's prompts ask for the eye colour on its own, not folded into traits.
+    if graph_mod.EYE_PLACEHOLDER in json.dumps(graph):
+        kwargs.update(eye_colour="green eyes")
     # v7 adds a per-persona Flux edit instruction (the hair recolour).
     if graph_mod._optional_by_title(graph, graph_mod.TITLE_FLUX_EDIT):
         kwargs.update(flux_edit_prompt="Change her hair to red, keep everything else exactly the same.")
@@ -500,9 +504,17 @@ def test_every_version_takes_the_same_job_variables(version, mode):
                       if n["class_type"] in graph_mod.SUBJECT_NODE_TYPES
                       for v in n["inputs"].values() if isinstance(v, str)]
     assert subject_values, "no subject template survived patching"
-    assert any("ch10e, young woman with red hair" in v for v in subject_values), \
-        "the subject was not substituted into any prompt template"
-    assert not any(graph_mod.SUBJECT_PLACEHOLDER in v for v in subject_values)
+    # v1-v8 write the combined "{subject}"; v9 writes {triggerword},
+    # {subject_traits} and {eye_colour} separately. Either way the persona has
+    # to reach a prompt, and no placeholder of any spelling may survive.
+    everything = json.dumps(graph)
+    assert "ch10e" in everything, "the trigger reached no prompt"
+    assert "young woman with red hair" in everything, "the traits reached no prompt"
+    leftovers = [graph_mod.SUBJECT_PLACEHOLDER, graph_mod.TRIGGER_PLACEHOLDER,
+                 graph_mod.DESCRIPTION_PLACEHOLDER, graph_mod.EYE_PLACEHOLDER,
+                 graph_mod.CHARACTER_PLACEHOLDER, *graph_mod.PLACEHOLDER_ALIASES]
+    for token in leftovers:
+        assert token not in everything, f"{token} survived patching in {version}"
 
 
 @pytest.mark.parametrize("version,mode", list(graph_mod._FILES))
@@ -530,14 +542,14 @@ def test_an_unknown_version_falls_back_rather_than_failing_the_render():
     assert graph_mod.normalise_version("v2") == "v2"
     assert graph_mod.normalise_version("V2") == "v2"
     assert graph_mod.normalise_version("v3") == "v3"
-    assert graph_mod.normalise_version("v9") == graph_mod.DEFAULT_VERSION
+    assert graph_mod.normalise_version("v99") == graph_mod.DEFAULT_VERSION
     assert graph_mod.normalise_version(None) == graph_mod.DEFAULT_VERSION
 
 
 def test_load_rejects_a_version_it_does_not_have():
     """normalise_version is the forgiving door; load itself is not."""
     with pytest.raises(graph_mod.GraphError, match="unknown version"):
-        graph_mod.load("single", "v9")
+        graph_mod.load("single", "v99")
 
 
 def test_the_two_versions_are_actually_different_graphs():
@@ -1296,3 +1308,125 @@ def test_the_strength_does_not_touch_the_style_loras():
     assert rows["lora_1"]["strength"] == 0.5
     assert rows["lora_2"]["strength"] == 1        # famegrid
     assert rows["lora_3"]["strength"] == 4        # fedor
+
+
+# ── v9: the persona is loaded twice ─────────────────────────────────────────
+#
+# A first pass through the Power Lora Loader and a second on the detail
+# sampler, at strengths the operator tuned apart. Both carry the same file, so
+# patching only the first would put the authoring persona's identity into every
+# detail pass — the same silent wrong-face failure, one node further along.
+
+V9_JOB = dict(image_filename="ref.png", lora_name="Chloe_v1.safetensors",
+              trigger_word="ch10e",
+              description="young woman with red hair",
+              eye_colour="green eyes",
+              gemini_api_key="KEY", seed=7, version="v9")
+
+
+def _v9(**over):
+    return graph_mod.patch("single", **{**V9_JOB, **over})
+
+
+def _detail(graph):
+    return graph[graph_mod._by_title(
+        graph, graph_mod.TITLE_CHARACTER_LORA_DETAIL)[0]]["inputs"]
+
+
+def test_both_passes_get_the_persona():
+    graph = _v9()
+
+    assert graph_mod.character_lora_of(graph) == "Chloe_v1.safetensors"
+    assert _detail(graph)["lora_name"] == "Chloe_v1.safetensors"
+
+
+def test_the_two_strengths_are_set_independently():
+    graph = _v9(lora_strength=0.4, lora_strength_detail=1.2)
+
+    rows = graph[graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]]["inputs"]
+    assert rows["lora_1"]["strength"] == 0.4
+    assert _detail(graph)["strength_model"] == 1.2
+
+
+def test_setting_one_pass_leaves_the_other_as_shipped():
+    """They are tuned apart — 0.65 and 0.9 — so one value must not flatten both."""
+    shipped = json.loads((ROOT / "workflows" / "single_photo_v9.json").read_text())
+    detail_shipped = shipped["2440"]["inputs"]["strength_model"]
+
+    graph = _v9(lora_strength=0.4)
+
+    assert _detail(graph)["strength_model"] == detail_shipped
+
+
+def test_neither_strength_given_keeps_both_as_shipped():
+    shipped = json.loads((ROOT / "workflows" / "single_photo_v9.json").read_text())
+
+    graph = _v9()
+
+    rows = graph[graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]]["inputs"]
+    assert rows["lora_1"]["strength"] == shipped["221"]["inputs"]["lora_1"]["strength"]
+    assert _detail(graph)["strength_model"] == shipped["2440"]["inputs"]["strength_model"]
+
+
+def test_the_detail_strength_is_bounded_too():
+    with pytest.raises(graph_mod.GraphError, match="outside"):
+        _v9(lora_strength_detail=95)
+
+
+# ── v9: the longhand placeholders ───────────────────────────────────────────
+
+def test_the_longhand_placeholders_are_substituted():
+    """v9's graphs spell them {triggerword}, {subject_traits} and
+    {eye_colour}. Typed by hand in ComfyUI, so they are accepted as written
+    rather than rewritten on import — a re-export would otherwise quietly stop
+    substituting."""
+    graph = _v9()
+    blob = json.dumps(graph)
+
+    assert "ch10e" in blob
+    assert "young woman with red hair" in blob
+    assert "green eyes" in blob
+    for token in ("{triggerword}", "{subject_traits}", "{eye_colour}"):
+        assert token not in blob, f"{token} survived"
+
+
+def test_the_trigger_does_not_eat_the_longhand_tail():
+    """Replacing {trigger} before {triggerword} would leave "ch10eword"."""
+    blob = json.dumps(_v9())
+
+    assert "ch10eword" not in blob
+
+
+def test_the_concat_prefix_is_the_bare_trigger():
+    """Gemini writes the traits and eye colour from the templated instructions,
+    so the prefix only has to carry the token the LoRA knows."""
+    graph = _v9()
+
+    concat = [n for n in graph.values() if n["class_type"] == "StringConcatenate"][0]
+    assert concat["inputs"]["string_a"] == "ch10e"
+
+
+def test_the_eye_colour_reaches_both_prompts():
+    graph = _v9()
+
+    carrying = [n for n in graph.values()
+                if any(isinstance(v, str) and "green eyes" in v
+                       for v in n["inputs"].values())]
+    assert len(carrying) >= 2, "the shot-director and system prompts both use it"
+
+
+def test_a_graph_with_no_persona_placeholder_at_all_is_refused(monkeypatch):
+    """Zero substitutions means a prompt that renders whoever the graph was
+    exported with. {subject} alone can no longer be that check — v9 does not
+    use it — so the guard counts every spelling together."""
+    stripped = graph_mod.load("single", "v9")
+    for node in stripped.values():
+        for field, value in list(node["inputs"].items()):
+            if isinstance(value, str):
+                for token in ("{triggerword}", "{subject_traits}",
+                              "{eye_colour}", "{subject}", "{trigger}"):
+                    node["inputs"][field] = node["inputs"][field].replace(token, "x")
+    monkeypatch.setattr(graph_mod, "load", lambda mode, version: stripped)
+
+    with pytest.raises(graph_mod.GraphError, match="no persona placeholder"):
+        graph_mod.patch("single", **V9_JOB)
