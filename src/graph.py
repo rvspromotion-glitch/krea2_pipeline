@@ -80,6 +80,23 @@ _FILES = {
 }
 
 
+# (version, mode) pairs served by another version's graph rather than by one of
+# their own. v7 onward are single-photo flows; their carousel entry points at
+# v6's so a stray carousel job fails on a render rather than a KeyError.
+#
+# Named because it is not only documentation: a borrowed graph is not part of
+# what its version needs downloaded. Counting v6's carousel as v9's dragged the
+# whole Flux stack — Klein, its text encoder and VAE, ~35GB — into every v9
+# cold start, to serve a job that cannot arrive while carousels are retired.
+BORROWED = {("v7", "carousel"), ("v8", "carousel"), ("v9", "carousel")}
+
+
+def own_graphs(version: str) -> list:
+    """The graph files this version ships, ignoring anything it borrows."""
+    return [_FILES[(version, mode)] for mode in MODES
+            if (version, mode) in _FILES and (version, mode) not in BORROWED]
+
+
 def normalise_version(raw: str | None) -> str:
     """Unknown or empty falls back to the default rather than failing a render.
 

@@ -274,3 +274,125 @@ def test_every_network_call_can_give_up():
     for call in aria:
         assert "ARIA_STALL" in call or "--lowest-speed-limit" in call, \
             f"aria2 with no stall guard:\n{call}"
+
+
+# ── Fetching only what a version loads ──────────────────────────────────────
+#
+# The worker has no network volume, so every cold start refetches whatever it
+# is told to — and it was told to fetch the union of all fourteen graphs. v9
+# loads eight of the seventeen; the nine it skips are Flux weights and
+# superseded checkpoints, some ~47GB, downloaded to sit unread until the
+# container is reclaimed.
+
+import sys
+
+sys.path.insert(0, str(REPO / "scripts"))
+
+
+def test_a_version_asks_only_for_what_its_own_graphs_load():
+    from models_for import models_for
+
+    v9 = models_for(["v9"])
+
+    assert "krast_bf16.safetensors" in v9
+    assert "Lenovo_ultrareal.safetensors" in v9
+    # v9 renders no Flux at all.
+    assert not any("Klein" in m or "flux" in m.lower() for m in v9), sorted(v9)
+    assert "AiO_krea2_checkpoint_int8_8steps.safetensors" not in v9, \
+        "v9 loads the krast checkpoint instead"
+
+
+def test_a_borrowed_carousel_is_not_counted():
+    """v7 onward are single-photo flows whose carousel entry points at v6's, so
+    a stray carousel job fails on a render rather than a KeyError. Counting
+    that graph as theirs dragged the whole Flux stack into every v9 cold start
+    to serve a job that cannot arrive while carousels are retired."""
+    from models_for import models_for
+
+    assert ("v9", "carousel") in __import__("graph").BORROWED
+    assert len(models_for(["v9"])) < len(models_for(["v6"]))
+
+
+def test_asking_for_several_versions_unions_them():
+    from models_for import models_for
+
+    assert models_for(["v8", "v9"]) == models_for(["v8"]) | models_for(["v9"])
+
+
+def test_every_version_is_derivable_and_fetchable():
+    """A version whose graph names a model the manifest cannot supply would
+    boot clean and die on the first render."""
+    from models_for import models_for
+
+    import graph as graph_mod
+
+    fetched = {line.split()[-1].split("/")[-1]
+               for line in (REPO / "models.txt").read_text().splitlines()
+               if line.split() and line.split()[0] in ("hf", "civit", "url")}
+    for version in graph_mod.VERSIONS:
+        missing = {m for m in models_for([version]) if m not in fetched}
+        # Per-persona LoRAs come from Radar, not models.txt.
+        missing = {m for m in missing
+                   if "Eva" not in m and "3lm1ra" not in m and "Chloe" not in m}
+        assert not missing, f"{version} loads {sorted(missing)}, not in models.txt"
+
+
+def test_an_unknown_version_fails_the_boot_rather_than_fetching_nothing(
+        server, tmp_path):
+    """A typo in the endpoint's setting must not quietly resolve to an empty
+    set — that boots a worker with no weights and fails every job."""
+    listing = _list(tmp_path, f"civit  {server}/model  checkpoints/a.safetensors\n")
+
+    result = _run(listing, tmp_path / "models", WORKFLOW_VERSIONS="v99")
+
+    assert result.returncode == 1
+    assert "unknown version" in result.stdout + result.stderr
+
+
+def test_no_filter_still_fetches_everything(server, tmp_path):
+    """Every endpoint behaved this way before the setting existed, and an
+    endpoint that has not been told is not an endpoint that wants less."""
+    listing = _list(tmp_path, f"""
+civit  {server}/model  checkpoints/a.safetensors
+civit  {server}/model  vae/b.safetensors
+""")
+    models = tmp_path / "models"
+
+    result = _run(listing, models)
+
+    assert result.returncode == 0
+    assert "2 fetched" in result.stdout
+
+
+def test_the_filter_actually_skips_what_the_version_does_not_load(server, tmp_path):
+    """Named with real filenames on purpose. Every other test here uses made-up
+    ones, so with a version set they would all be skipped and the suite would
+    pass whether the filter worked or not — which it did, until this existed."""
+    listing = _list(tmp_path, f"""
+civit  {server}/model  checkpoints/krast_bf16.safetensors
+civit  {server}/model  checkpoints/AiO_krea2_checkpoint_int8_8steps.safetensors
+""")
+    models = tmp_path / "models"
+
+    result = _run(listing, models, WORKFLOW_VERSIONS="v9")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (models / "checkpoints/krast_bf16.safetensors").exists()
+    assert not (models / "checkpoints/AiO_krea2_checkpoint_int8_8steps.safetensors").exists(), \
+        "v9 loads the krast checkpoint; the AiO one is 12G it never reads"
+    assert "1 not needed by v9" in result.stdout
+
+
+def test_several_versions_on_one_endpoint_fetch_the_union(server, tmp_path):
+    """An endpoint can serve more than one version while a new one is tried."""
+    listing = _list(tmp_path, f"""
+civit  {server}/model  checkpoints/krast_bf16.safetensors
+civit  {server}/model  checkpoints/AiO_krea2_checkpoint_int8_8steps.safetensors
+""")
+    models = tmp_path / "models"
+
+    result = _run(listing, models, WORKFLOW_VERSIONS="v1,v9")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (models / "checkpoints/krast_bf16.safetensors").exists()
+    assert (models / "checkpoints/AiO_krea2_checkpoint_int8_8steps.safetensors").exists()

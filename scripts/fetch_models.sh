@@ -34,6 +34,32 @@ PROGRESS_EVERY="${MODEL_FETCH_PROGRESS_EVERY:-15}"
 
 log() { echo "[models] $*"; }
 
+# Which versions this endpoint serves. The worker fetches at container start,
+# before any job has said what it wants, so it cannot infer this — and with no
+# network volume it pays the full download every cold start. Naming the
+# versions turns that from the union of every graph into what one of them
+# actually loads: v9 needs eight files where the union is seventeen, and the
+# nine it skips are Flux weights and superseded checkpoints worth ~47GB.
+#
+# Unset fetches everything, which is what every endpoint did before this
+# existed. Being wrong here costs a boot that works and a render that dies on
+# a missing file, so the default stays the safe one.
+WANT_VERSIONS="${WORKFLOW_VERSIONS:-}"
+WANTED_LIST=""
+if [ -n "$WANT_VERSIONS" ]; then
+  if ! WANTED_LIST="$(python3 "${HERE}/models_for.py" ${WANT_VERSIONS//,/ } 2>&1)"; then
+    echo "[models] FATAL: ${WANTED_LIST}" >&2
+    exit 1
+  fi
+  log "fetching for ${WANT_VERSIONS} only ($(echo "$WANTED_LIST" | wc -l) model(s))"
+fi
+
+# Named by this version, or no filter in force.
+is_wanted() {
+  [ -z "$WANTED_LIST" ] && return 0
+  printf '%s\n' "$WANTED_LIST" | grep -qxF "$1"
+}
+
 # Present means complete, not merely large. A size floor got this wrong in both
 # directions: fedor_bypass is 1040 bytes of real model, so it never counted as
 # present and was re-fetched from Civitai on every boot — and with no volume
@@ -61,6 +87,7 @@ started=$(date +%s)
 declare -a pids=() names=() logs=() wanted=()
 queued=0
 present=0
+skipped=0
 
 while read -r kind a b c; do
   case "$kind" in ""|\#*) continue ;; esac
@@ -74,6 +101,11 @@ while read -r kind a b c; do
 
   dest="${MODELS_DIR}/${rel}"
   name="$(basename "$rel")"
+
+  if ! is_wanted "$name"; then
+    skipped=$((skipped + 1))
+    continue
+  fi
 
   # Skip-if-present is what makes a restarted container, or a volume if one is
   # ever attached, cost nothing.
@@ -193,5 +225,5 @@ if [ "$failed" -gt 0 ]; then
   exit 1
 fi
 
-log "ready — ${present} already present, ${queued} fetched in ${elapsed}s"
+log "ready — ${present} already present, ${queued} fetched${skipped:+, ${skipped} not needed by ${WANT_VERSIONS}} in ${elapsed}s"
 du -sh "$MODELS_DIR" 2>/dev/null | sed 's/^/[models] total /'
