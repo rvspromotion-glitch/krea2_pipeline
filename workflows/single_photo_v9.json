@@ -576,16 +576,6 @@
       "title": "Load LoRA"
     }
   },
-  "982:146": {
-    "inputs": {
-      "unet_name": "krea2_raw_fp8_scaled.safetensors",
-      "weight_dtype": "default"
-    },
-    "class_type": "UNETLoader",
-    "_meta": {
-      "title": "Diffusion Model"
-    }
-  },
   "982:2376": {
     "inputs": {
       "ckpt_name": "krast_bf16.safetensors"
