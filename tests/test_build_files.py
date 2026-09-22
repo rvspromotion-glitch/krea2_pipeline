@@ -279,3 +279,36 @@ def test_conflicting_opencv_builds_are_removed_before_install():
 def test_a_node_package_cannot_swap_the_contrib_build_out():
     for name in ("opencv-python", "opencv-python-headless", "opencv-contrib-python"):
         assert name in INSTALL_NODES, f"{name} is not filtered from node requirements"
+
+
+def test_every_script_the_boot_path_runs_is_in_the_image():
+    """models_for.py was not, and the way that fails is the worst kind: the
+    endpoint is set to fetch one version, the filter cannot find its script,
+    and the boot dies — on an image that built clean and a change that passed
+    every test, because the tests run from the repo where the file is present.
+
+    Checked by reading what the boot scripts actually invoke rather than from a
+    list, so the next script added to that path cannot be forgotten the same
+    way.
+    """
+    import re
+
+    referenced = set()
+    for name in ("entrypoint.sh", "scripts/fetch_models.sh", "scripts/fetch_model.sh"):
+        text = (REPO / name).read_text()
+        # ${HERE}/x.py, /app/scripts/x.sh, "$CHECK_MODEL" style indirections
+        referenced |= set(re.findall(r'(?:\$\{HERE\}|/app/scripts)/([\w.]+\.(?:sh|py))',
+                                     text))
+        for var, target in re.findall(r'^(\w+)="\$\{HERE\}/([\w.]+\.(?:sh|py))"',
+                                      text, re.MULTILINE):
+            referenced.add(target)
+
+    # COPY lines only. Matching the whole Dockerfile let the chmod line —
+    # which names /app/scripts/models_for.py, the destination — satisfy a check
+    # meant to prove the file was put there in the first place.
+    copy_lines = " ".join(
+        line for line in DOCKERFILE.splitlines() if line.strip().startswith("COPY")
+        or line.strip().startswith("scripts/"))     # continuation of a COPY
+    missing = [s for s in sorted(referenced) if f"scripts/{s}" not in copy_lines]
+    assert not missing, (
+        f"{missing} are run at container start but never COPYd into the image")
