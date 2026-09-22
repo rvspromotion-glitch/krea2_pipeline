@@ -1397,13 +1397,18 @@ def test_the_trigger_does_not_eat_the_longhand_tail():
     assert "ch10eword" not in blob
 
 
-def test_the_concat_prefix_is_the_bare_trigger():
+def test_the_concat_prefix_ends_in_the_persona():
     """Gemini writes the traits and eye colour from the templated instructions,
-    so the prefix only has to carry the token the LoRA knows."""
+    so the prefix only has to carry the token the LoRA knows — behind whatever
+    fixed style tokens are switched on, which is a dial the operator moves.
+    Pinned to the trigger landing last rather than to the whole string, or
+    toggling famegrid back off would fail this for no reason."""
     graph = _v9()
 
     concat = [n for n in graph.values() if n["class_type"] == "StringConcatenate"][0]
-    assert concat["inputs"]["string_a"] == "ch10e"
+    prefix = concat["inputs"]["string_a"]
+    assert prefix.endswith("ch10e"), prefix
+    assert "{" not in prefix, "a placeholder survived in the prefix"
 
 
 def test_the_eye_colour_reaches_both_prompts():
