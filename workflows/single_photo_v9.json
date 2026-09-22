@@ -1,7 +1,7 @@
 {
   "138": {
     "inputs": {
-      "image": "zoeyiso_3637763912062185134_47557972205_2025-05-22.jpg"
+      "image": "6.jpg"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -19,14 +19,14 @@
         "strength": 0.65
       },
       "lora_2": {
-        "on": false,
+        "on": true,
         "lora": "famegrid_spicy.safetensors",
-        "strength": 0.75
+        "strength": 0.4
       },
       "lora_3": {
         "on": false,
         "lora": "fedor_bypass.safetensors",
-        "strength": 0.5
+        "strength": 1
       },
       "\u2795 Add Lora": "",
       "model": [
@@ -62,7 +62,7 @@
   },
   "230": {
     "inputs": {
-      "prompt": "describe this image based on pose and think you are an adult photograph director that has to think out full poses anchored to the ass and tits of the model. copy this exact image into a prompt. the image is meant for Instagram and cannot be nude, it can be very suggestive. \n\nmake sure to frame {triggerword} as the only person, we do not want duplicates in the image.\n\nbe precise about where her hands and legs are if they're in frame.\n\ndescribe the exact background in detail.\n\ndescribe if we can see her face or she is looking elsewhere, let it reflect in wording in the prompt.\n\nexplain how the composition of the scene have effect on the look of the image, make this reflect in wording within the prompt.\n\nIF there is a hat or cap, never include logo's, make sure its a plain cap or hat.\n\nexplain in detail the framing of the shot, in a way that it will reflect how big the subject should be inside the scene.\n\ninclude the atmosphere and how she interacts or behaves in the scene.\n\nalways include: {subject_traits} and Refer to her as `{triggerword}`.\n\nwhenever referring to her eyes, use \"{eye_colour}\". if the eyes are not visible they're not needed for the prompt.\n\nyou must use between 900 and 1300 characters for the prompt.\n\nonly output the full prompt, be very detailed and descriptive.",
+      "prompt": "describe this image based on pose and think you are an adult photograph director that has to think out full poses anchored to the ass and tits of the model. copy this exact image into a prompt. the image is meant for instagram and cannot be nude, it can be very suggestive. \n\nmake sure that we know what part of her body is in front and what part is not visible. e.g. front view, back view, do we look at her back or at her belly etc.\n\nmake sure to frame {triggerword} as the only person, we do not want duplicates in the image.\n\nbe precise about where her hands and legs are if they're in frame.\n\ndescribe the exact background in detail.\n\ndescribe if we can see her face or she is looking elsewhere, let it reflect in wording in the prompt.\n\nexplain how the composition of the scene have effect on the look of the image, make this reflect in wording within the prompt.\n\nIF there is a hat or cap, never include logo's, make sure its a plain cap or hat.\n\nexplain in detail the framing of the shot, in a way that it will reflect how big the subject should be inside the scene.\n\ninclude the atmosphere and how she interacts or behaves in the scene.\n\nalways inclode: \"{subject_traits}\" and Refer to her as `{triggerword}`.\n\nwhenever refering to her eyes, use \"{eye_colour}\". if the eyes are not visible they're not needed for the prompt.\n\nyou must use between 900 and 1300 characters for the prompt.\n\nonly output the full prompt, be very detailed and descriptive.",
       "safety_settings": "BLOCK_NONE",
       "response_type": "text",
       "model": "gemini-3.1-flash-lite-preview",
@@ -72,7 +72,7 @@
         "2447",
         0
       ],
-      "seed": 1596651385,
+      "seed": 1596651389,
       "temperature": 0.7,
       "num_predict": 0,
       "images": [
@@ -256,15 +256,15 @@
       "vignette_highlights": 0,
       "vignette_style": "highlight_priority",
       "chromatic_aberration": 24.77970079654403,
-      "grain_amount": 6.190114581994957,
-      "grain_size": 24.618899208038144,
+      "grain_amount": 14.929707444698561,
+      "grain_size": 35.22643344353556,
       "grain_roughness": 45.26363563847297,
-      "skin_detail": 0,
-      "skin_noise": 0,
+      "skin_detail": 2.8854964124216695,
+      "skin_noise": 0.5,
       "contact_shadows": 14.614607108368762,
       "phone_color": 85.47832904283801,
       "defocus": 35.205940111359546,
-      "seed": 1272215965,
+      "seed": 2501295429,
       "auto_mask": true,
       "image": [
         "2429",
@@ -362,7 +362,7 @@
       "grayscale": false,
       "emboss": false,
       "edge_enhance": false,
-      "seed": 687545176919673,
+      "seed": 965662556401389,
       "image": [
         "2422",
         0
@@ -441,7 +441,7 @@
   },
   "2436": {
     "inputs": {
-      "string_a": "{triggerword}",
+      "string_a": "Famegrid, {triggerword}",
       "string_b": [
         "2398",
         0
@@ -526,6 +526,20 @@
     "class_type": "ImageScaleBy",
     "_meta": {
       "title": "Upscale Image By"
+    }
+  },
+  "2460": {
+    "inputs": {
+      "lora_name": "Lenovo_ultrareal.safetensors",
+      "strength_model": 0.55,
+      "model": [
+        "2440",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Detail style LoRA"
     }
   },
   "982:147": {
@@ -800,7 +814,7 @@
       "eta": 0.5,
       "sampler_name": "linear/euler",
       "scheduler": "beta57",
-      "steps": 6,
+      "steps": 8,
       "steps_to_run": -1,
       "denoise": 0.8,
       "cfg": 1,
@@ -808,7 +822,7 @@
       "sampler_mode": "standard",
       "bongmath": true,
       "model": [
-        "2440",
+        "2460",
         0
       ],
       "positive": [
@@ -832,13 +846,13 @@
   "2383:2381": {
     "inputs": {
       "add_noise": "enable",
-      "noise_seed": 670909954776357,
+      "noise_seed": 670909954776359,
       "steps": 24,
       "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "beta",
       "start_at_step": 3,
-      "end_at_step": 12,
+      "end_at_step": 13,
       "return_with_leftover_noise": "disable",
       "model": [
         "221",
