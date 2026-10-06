@@ -158,3 +158,22 @@ def test_a_timeout_is_reported_as_a_timeout(stub, monkeypatch):
 
     assert out["kind"] == "timeout"
     assert "1800" in out["error"]
+
+
+# ── v10 ──────────────────────────────────────────────────────────────────────
+
+def test_a_v10_carousel_takes_the_atlas_key_and_slide_count_from_the_job(stub, monkeypatch):
+    monkeypatch.delenv("ATLASCLOUD_API_KEY", raising=False)
+    stub["images"] = [PNG + bytes([i]) for i in range(6)]
+    out = handler_mod.handler(job(mode="carousel", workflow_version="v10", eye_colour="grey eyes",
+                                  atlascloud_api_key="atlas-1", carousel_slides=5))
+    assert "error" not in out and out["count"] == 6 and out["workflow_version"] == "v10"
+    g = stub["submitted"]
+    assert [n["inputs"]["api_key"] for n in g.values()
+            if n["class_type"] == "SeedreamEditSequentialAtlas"] == ["atlas-1"]
+
+
+def test_a_v10_carousel_without_an_atlas_key_is_refused_before_rendering(stub, monkeypatch):
+    monkeypatch.delenv("ATLASCLOUD_API_KEY", raising=False)
+    out = handler_mod.handler(job(mode="carousel", workflow_version="v10", eye_colour="grey eyes"))
+    assert "AtlasCloud" in out["error"] and stub["submitted"] is None

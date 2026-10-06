@@ -35,7 +35,7 @@ MODES = ("single", "carousel")
 #
 # v1 stays the default. It is what has been rendering, and a version that has
 # to be asked for cannot become the default by accident.
-VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9")
+VERSIONS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10")
 DEFAULT_VERSION = "v1"
 
 _FILES = {
@@ -77,6 +77,12 @@ _FILES = {
     # sampler, at strengths tuned apart. Single only; carousel falls back.
     ("v9", "single"):   "single_photo_v9.json",
     ("v9", "carousel"): "carousel_v6.json",
+    # v10 is v9's krast chain with a carousel of its own again: the hero is
+    # rendered as in the single, then Seedream 4.x Edit Sequential on
+    # AtlasCloud (AtlasNode) draws the other slides from it, each refined
+    # through the same character LoRA. The hero goes back in at slide 1.
+    ("v10", "single"):   "single_photo_v10.json",
+    ("v10", "carousel"): "carousel_v10.json",
 }
 
 
@@ -143,6 +149,16 @@ TITLE_FLUX_STYLE_LORA = "Flux style LoRA"
 # a placeholder node and the worker writes the persona's own instruction into
 # it. Patched when the graph has the slot, skipped when it does not.
 TITLE_FLUX_EDIT = "Flux edit"
+
+# v10's carousel: how many slides Seedream draws after the hero. The job may
+# set it; the hero is always slide 1, so the post has this many plus one.
+TITLE_CAROUSEL_SLIDES = "Carousel slides"
+CAROUSEL_SLIDES_RANGE = (1, 9)      # Instagram takes ten images per post
+
+# Nodes that call AtlasCloud. The key comes with the job (Radar holds it), or
+# from ATLASCLOUD_API_KEY on the worker — never from the exported file.
+ATLAS_NODE_CLASSES = ("SeedreamEditSequentialAtlas",)
+ATLAS_ENV = "ATLASCLOUD_API_KEY"
 
 SUBJECT_PLACEHOLDER = "{subject}"
 
@@ -505,6 +521,8 @@ def patch(
     lora_strength: float | None = None,
     lora_strength_detail: float | None = None,
     eye_colour: str = "",
+    atlascloud_api_key: str = "",
+    carousel_slides: int | None = None,
 ) -> dict:
     """Return a job-ready copy of the graph. The template on disk is untouched.
 
@@ -591,10 +609,42 @@ def patch(
     for nid in _by_class(graph, "Ask_Gemini_Batch"):
         graph[nid]["inputs"]["api_key"] = gemini_api_key
 
+    # v10's AtlasCloud nodes. Checked here rather than left to the node: it
+    # would fail after the hero had already been rendered, minutes in.
+    atlas_nodes = [nid for nid, n in graph.items() if n.get("class_type") in ATLAS_NODE_CLASSES]
+    if atlas_nodes:
+        key = (atlascloud_api_key or "").strip()
+        if not key and not os.environ.get(ATLAS_ENV, "").strip():
+            raise GraphError(
+                f"{version}/{mode} calls AtlasCloud but no atlascloud_api_key was "
+                f"given and {ATLAS_ENV} is not set on the worker")
+        for nid in atlas_nodes:
+            graph[nid]["inputs"]["api_key"] = key     # "" lets the node read the env
+
+    slides_node = _optional_by_title(graph, TITLE_CAROUSEL_SLIDES)
+    if slides_node is not None and carousel_slides not in (None, ""):
+        low, high = CAROUSEL_SLIDES_RANGE
+        try:
+            count = int(carousel_slides)
+        except (TypeError, ValueError):
+            raise GraphError(f"carousel_slides must be a whole number, got {carousel_slides!r}")
+        if not low <= count <= high:
+            raise GraphError(f"carousel_slides {count} is outside {low}–{high}")
+        graph[slides_node]["inputs"]["value"] = count
+
     rng = random.Random(seed)
     _randomise_seeds(graph, rng)
 
     return graph
+
+
+def expected_images(graph: dict, mode: str) -> int:
+    """How many images this graph should return: the hero plus the slides a
+    v10 carousel was asked for, four for the older carousels, one for a single."""
+    slides = _optional_by_title(graph, TITLE_CAROUSEL_SLIDES)
+    if slides is not None:
+        return int(graph[slides]["inputs"]["value"]) + 1
+    return 4 if mode == "carousel" else 1
 
 
 def output_node(graph: dict) -> str:

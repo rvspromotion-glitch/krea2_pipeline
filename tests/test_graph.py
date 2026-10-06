@@ -259,7 +259,7 @@ def test_the_shipped_workflows_still_carry_the_sage_node():
         # absence is intentional, not the silent change this guards against.
         # v7 and v8 were exported without it.
         if name in ("single_photo_v7.json", "single_photo_v8.json",
-                    "single_photo_v9.json"):
+                    "single_photo_v9.json", "single_photo_v10.json", "carousel_v10.json"):
             continue
         raw = json.loads((ROOT / "workflows" / name).read_text())
         assert any(n["class_type"] == "PathchSageAttentionKJ" for n in raw.values()), key
@@ -480,6 +480,9 @@ def _job_kwargs(version, mode="single"):
     # v7 adds a per-persona Flux edit instruction (the hair recolour).
     if graph_mod._optional_by_title(graph, graph_mod.TITLE_FLUX_EDIT):
         kwargs.update(flux_edit_prompt="Change her hair to red, keep everything else exactly the same.")
+    # v10's carousel draws its slides on AtlasCloud.
+    if any(n["class_type"] in graph_mod.ATLAS_NODE_CLASSES for n in graph.values()):
+        kwargs.update(atlascloud_api_key="ATLAS")
     return kwargs
 
 
@@ -1435,3 +1438,75 @@ def test_a_graph_with_no_persona_placeholder_at_all_is_refused(monkeypatch):
 
     with pytest.raises(graph_mod.GraphError, match="no persona placeholder"):
         graph_mod.patch("single", **V9_JOB)
+
+
+# ── v10: krast again, and a carousel drawn on AtlasCloud ─────────────────────
+
+def _v10(mode="single", **over):
+    kwargs = dict(BASE, trigger_word="ch10e", description="long red hair",
+                  eye_colour="green eyes", lora_name="Chloe_v1.safetensors", seed=7,
+                  version="v10", atlascloud_api_key="ATLAS-KEY")
+    kwargs.update(over)
+    return graph_mod.patch(mode, **kwargs)
+
+
+@pytest.mark.parametrize("mode", ["single", "carousel"])
+def test_v10_renders_the_persona_and_nothing_of_the_authoring_one(mode):
+    graph = _v10(mode)
+    blob = json.dumps({k: v for k, v in graph.items()
+                       if v["_meta"]["title"] != "Positive Promt"})      # the zeroed-out negative
+    for authored in ("3lm1ra", "platinum", "grey eyes", "Krea2_filter_bypass"):
+        assert authored not in blob, authored
+    assert "ch10e" in blob and "long red hair" in blob and "green eyes" in blob
+    lora = graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA)[0]
+    detail = graph_mod._by_title(graph, graph_mod.TITLE_CHARACTER_LORA_DETAIL)[0]
+    assert graph[lora]["inputs"]["lora_1"]["lora"] == "Chloe_v1.safetensors"
+    assert graph[detail]["inputs"]["lora_name"] == "Chloe_v1.safetensors"
+    assert graph[graph_mod.output_node(graph)]["class_type"] == "SaveImage"
+
+
+def test_v10_has_a_carousel_of_its_own():
+    assert ("v10", "carousel") not in graph_mod.BORROWED
+    assert graph_mod.own_graphs("v10") == ["single_photo_v10.json", "carousel_v10.json"]
+
+
+def test_the_v10_carousel_gets_the_atlascloud_key_from_the_job(monkeypatch):
+    graph = _v10("carousel")
+    seedream = [n for n in graph.values() if n["class_type"] == "SeedreamEditSequentialAtlas"]
+    assert len(seedream) == 1 and seedream[0]["inputs"]["api_key"] == "ATLAS-KEY"
+    shipped = json.loads((ROOT / "workflows" / "carousel_v10.json").read_text())
+    assert all(n["inputs"].get("api_key", "") == "" for n in shipped.values())   # never in the file
+
+    monkeypatch.delenv(graph_mod.ATLAS_ENV, raising=False)
+    with pytest.raises(graph_mod.GraphError, match="AtlasCloud"):
+        _v10("carousel", atlascloud_api_key="")
+    monkeypatch.setenv(graph_mod.ATLAS_ENV, "from-env")
+    graph = _v10("carousel", atlascloud_api_key="")
+    assert [n["inputs"]["api_key"] for n in graph.values()
+            if n["class_type"] == "SeedreamEditSequentialAtlas"] == [""]   # the node reads the env
+    assert _v10("single", atlascloud_api_key="")                            # the single never needs it
+
+
+def test_the_v10_carousel_slide_count_comes_from_the_job():
+    graph = _v10("carousel")
+    assert graph_mod.expected_images(graph, "carousel") == 4                # hero + 3 as shipped
+    graph = _v10("carousel", carousel_slides=5)
+    slides = graph_mod._by_title(graph, graph_mod.TITLE_CAROUSEL_SLIDES)[0]
+    assert graph[slides]["inputs"]["value"] == 5
+    assert graph_mod.expected_images(graph, "carousel") == 6
+    for bad in (0, 10, "many"):
+        with pytest.raises(graph_mod.GraphError, match="carousel_slides"):
+            _v10("carousel", carousel_slides=bad)
+    assert graph_mod.expected_images(_v10("single"), "single") == 1
+    assert graph_mod.expected_images(graph_mod.load("carousel", "v6"), "carousel") == 4
+
+
+def test_v10_loads_only_models_the_list_can_fetch():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("models_for", ROOT / "scripts" / "models_for.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    wanted = mod.models_for(["v10"])
+    assert "krea2_raw_fp8_scaled.safetensors" not in wanted       # the dead UNETLoader is gone
+    assert {"krast_bf16.safetensors", "Lenovo_ultrareal.safetensors",
+            "famegrid_spicy.safetensors"} <= wanted
