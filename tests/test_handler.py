@@ -47,6 +47,7 @@ def job(**over):
         "trigger_word": "3lm1ra",
         "description": "young woman with long platinum blonde hair",
         "gemini_api_key": "key-123",
+        "openrouter_api_key": "router-123",
     }
     payload.update(over)
     return {"input": payload}
@@ -177,3 +178,58 @@ def test_a_v10_carousel_without_an_atlas_key_is_refused_before_rendering(stub, m
     monkeypatch.delenv("ATLASCLOUD_API_KEY", raising=False)
     out = handler_mod.handler(job(mode="carousel", workflow_version="v10", eye_colour="grey eyes"))
     assert "AtlasCloud" in out["error"] and stub["submitted"] is None
+
+
+def test_the_hero_prompt_from_the_job_is_what_the_v10_graph_renders(stub):
+    out = handler_mod.handler(job(workflow_version="v10", eye_colour="grey eyes",
+                                  gemini_api_key="", hero_prompt="  she laughs on a pier  "))
+    assert "error" not in out
+    g = stub["submitted"]
+    assert [n["inputs"]["value"] for n in g.values()
+            if n["_meta"].get("title") == "Hero prompt"] == ["she laughs on a pier"]
+
+
+def test_a_v10_job_without_an_openrouter_key_is_an_input_error(stub, monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    out = handler_mod.handler(job(mode="carousel", workflow_version="v10", eye_colour="grey eyes",
+                                  atlascloud_api_key="atlas-1", openrouter_api_key="",
+                                  hero_prompt="x"))
+    assert out["kind"] == "input" and "openrouter_api_key" in out["error"]
+    assert stub["submitted"] is None
+
+
+# ── The result has to fit RunPod's 10 MB ─────────────────────────────────────
+
+def _grainy_png(seed: int, size=(1612, 2016)) -> bytes:
+    """A v10-sized frame with film grain — the kind of image PNG barely compresses."""
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    rng = np.random.default_rng(seed)
+    w, h = size
+    base = np.linspace(40, 210, w, dtype=np.float32)[None, :, None].repeat(h, 0).repeat(3, 2)
+    noisy = np.clip(base + rng.normal(0, 14, (h, w, 3)), 0, 255).astype("uint8")
+    out = io.BytesIO()
+    Image.fromarray(noisy).save(out, "PNG")
+    return out.getvalue()
+
+
+def test_a_v10_carousel_comes_back_as_jpegs_that_fit_runpods_limit(stub, monkeypatch):
+    monkeypatch.delenv("ATLASCLOUD_API_KEY", raising=False)
+    slides = [_grainy_png(i) for i in range(4)]
+    assert sum(len(base64.b64encode(s)) for s in slides) > 10_000_000      # as PNG: refused
+    stub["images"] = slides
+    out = handler_mod.handler(job(mode="carousel", workflow_version="v10", eye_colour="grey eyes",
+                                  atlascloud_api_key="atlas-1"))
+    assert "error" not in out and out["format"] == "jpeg" and out["count"] == 4
+    assert sum(len(i) for i in out["images"]) <= handler_mod.RESULT_BUDGET
+    assert all(base64.b64decode(i)[:2] == b"\xff\xd8" for i in out["images"])
+
+
+def test_a_set_that_cannot_fit_is_an_output_error_not_a_lost_render(stub, monkeypatch):
+    monkeypatch.setattr(handler_mod, "RESULT_BUDGET", 50_000)
+    stub["images"] = [_grainy_png(0, (400, 500))]
+    out = handler_mod.handler(job())
+    assert out["kind"] == "output" and "fewer carousel slides" in out["error"]
