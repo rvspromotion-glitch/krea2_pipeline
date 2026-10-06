@@ -312,3 +312,12 @@ def test_every_script_the_boot_path_runs_is_in_the_image():
     missing = [s for s in sorted(referenced) if f"scripts/{s}" not in copy_lines]
     assert not missing, (
         f"{missing} are run at container start but never COPYd into the image")
+
+
+def test_fastapi_is_held_below_the_release_that_needs_protobuf_5():
+    """runpod pulls fastapi[all], and from 0.142 that extra brings OpenTelemetry,
+    whose protobuf floor is 5. With protobuf<5 pinned for the node set, an
+    unbounded fastapi makes the image unbuildable — it took the v10 build down."""
+    lines = [l.split("#")[0].strip() for l in (REPO / "constraints.txt").read_text().splitlines()]
+    assert "protobuf<5" in lines
+    assert "fastapi<0.142" in lines
