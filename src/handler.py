@@ -18,11 +18,15 @@ Job input
     trigger_word    e.g. "3lm1ra"
     description     e.g. "young woman with long platinum blonde hair"
     gemini_api_key  from Radar's settings; never baked into the graph
+    atlascloud_api_key  v10 carousel: Seedream on AtlasCloud draws the slides
+                    (else ATLASCLOUD_API_KEY on the worker)
+    carousel_slides v10 carousel: slides after the hero, 1-9 (graph default 3)
     seed            optional, for reproducing a specific run
 
 Job output
 ----------
-    images          list of base64 PNGs — 1 for single, 4 for carousel
+    images          list of base64 PNGs — 1 for single, 4 for a carousel
+                    (v10: the hero plus carousel_slides)
     count, mode, seed, duration_s
 
 `images` is always a list. A carousel's four entries are slides of one post, not
@@ -195,6 +199,8 @@ def run_job(payload: dict) -> dict:
     # v9 applies the persona twice, at strengths tuned apart.
     lora_strength_detail = _strength("lora_strength_detail")
     eye_colour = (payload.get("eye_colour") or "").strip()
+    atlas_key = (payload.get("atlascloud_api_key") or "").strip()
+    carousel_slides = payload.get("carousel_slides")
     seed = payload.get("seed")
 
     comfy.wait_until_ready()
@@ -223,6 +229,8 @@ def run_job(payload: dict) -> dict:
         lora_strength=lora_strength,
         lora_strength_detail=lora_strength_detail,
         eye_colour=eye_colour,
+        atlascloud_api_key=atlas_key,
+        carousel_slides=carousel_slides,
     )
     log.info("patched %s/%s graph: %s", version, mode, graph_mod.describe(job_graph))
 
@@ -233,7 +241,7 @@ def run_job(payload: dict) -> dict:
     entry = comfy.wait(prompt_id, timeout=JOB_TIMEOUT)
     images = comfy.collect_images(entry, node)
 
-    expected = 4 if mode == "carousel" else 1
+    expected = graph_mod.expected_images(job_graph, mode)
     if len(images) != expected:
         # Not fatal — the caller can still use what came back — but it means the
         # graph changed shape, which is worth seeing in the logs immediately.
