@@ -17,7 +17,12 @@ Job input
     lora_url        where to fetch it from if it is not already present
     trigger_word    e.g. "3lm1ra"
     description     e.g. "young woman with long platinum blonde hair"
-    gemini_api_key  from Radar's settings; never baked into the graph
+    gemini_api_key  from Radar's settings; never baked into the graph. Only
+                    needed by graphs that call Gemini directly
+    openrouter_api_key  graphs whose Gemini nodes go through OpenRouter (v10)
+                    (else OPENROUTER_API_KEY on the worker)
+    hero_prompt     v10: the hero prompt Radar wrote; replaces the graph's own
+                    Gemini call. Without it the graph writes one itself
     atlascloud_api_key  v10 carousel: Seedream on AtlasCloud draws the slides
                     (else ATLASCLOUD_API_KEY on the worker)
     carousel_slides v10 carousel: slides after the hero, 1-9 (graph default 3)
@@ -225,7 +230,11 @@ def run_job(payload: dict) -> dict:
 
     trigger_word = _require(payload, "trigger_word")
     description = _require(payload, "description")
-    gemini_key = _require(payload, "gemini_api_key")
+    # Which keys a graph needs depends on its Gemini nodes, so graph.patch()
+    # is what refuses a job that is missing one.
+    gemini_key = (payload.get("gemini_api_key") or "").strip()
+    openrouter_key = (payload.get("openrouter_api_key") or "").strip()
+    hero_prompt = (payload.get("hero_prompt") or "").strip() or None
     lora_name = _ensure_lora(payload)
     flux_lora_name = _ensure_lora(payload, "flux_lora_name", "flux_lora_url",
                                   required=False)
@@ -284,6 +293,8 @@ def run_job(payload: dict) -> dict:
         eye_colour=eye_colour,
         atlascloud_api_key=atlas_key,
         carousel_slides=carousel_slides,
+        openrouter_api_key=openrouter_key,
+        hero_prompt=hero_prompt,
     )
     log.info("patched %s/%s graph: %s", version, mode, graph_mod.describe(job_graph))
 
@@ -320,7 +331,7 @@ def handler(event: dict) -> dict:
     payload = (event or {}).get("input") or {}
     try:
         return run_job(payload)
-    except JobError as exc:
+    except (JobError, graph_mod.MissingKey) as exc:
         log.error("bad job input: %s", exc)
         return {"error": str(exc), "kind": "input"}
     except OutputTooLarge as exc:

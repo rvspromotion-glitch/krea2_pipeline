@@ -47,6 +47,7 @@ def job(**over):
         "trigger_word": "3lm1ra",
         "description": "young woman with long platinum blonde hair",
         "gemini_api_key": "key-123",
+        "openrouter_api_key": "router-123",
     }
     payload.update(over)
     return {"input": payload}
@@ -177,6 +178,24 @@ def test_a_v10_carousel_without_an_atlas_key_is_refused_before_rendering(stub, m
     monkeypatch.delenv("ATLASCLOUD_API_KEY", raising=False)
     out = handler_mod.handler(job(mode="carousel", workflow_version="v10", eye_colour="grey eyes"))
     assert "AtlasCloud" in out["error"] and stub["submitted"] is None
+
+
+def test_the_hero_prompt_from_the_job_is_what_the_v10_graph_renders(stub):
+    out = handler_mod.handler(job(workflow_version="v10", eye_colour="grey eyes",
+                                  gemini_api_key="", hero_prompt="  she laughs on a pier  "))
+    assert "error" not in out
+    g = stub["submitted"]
+    assert [n["inputs"]["value"] for n in g.values()
+            if n["_meta"].get("title") == "Hero prompt"] == ["she laughs on a pier"]
+
+
+def test_a_v10_job_without_an_openrouter_key_is_an_input_error(stub, monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    out = handler_mod.handler(job(mode="carousel", workflow_version="v10", eye_colour="grey eyes",
+                                  atlascloud_api_key="atlas-1", openrouter_api_key="",
+                                  hero_prompt="x"))
+    assert out["kind"] == "input" and "openrouter_api_key" in out["error"]
+    assert stub["submitted"] is None
 
 
 # ── The result has to fit RunPod's 10 MB ─────────────────────────────────────

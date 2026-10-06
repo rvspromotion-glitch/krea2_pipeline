@@ -22,6 +22,7 @@ BASE = dict(
     trigger_word="3lm1ra",
     description="young woman with long platinum blonde hair",
     gemini_api_key="test-key",
+    openrouter_api_key="router-key",
 )
 
 
@@ -467,7 +468,7 @@ def _job_kwargs(version, mode="single"):
     """
     kwargs = dict(image_filename="ref.png", lora_name="Chloe_v1.safetensors",
                   trigger_word="ch10e", description="young woman with red hair",
-                  gemini_api_key="KEY", seed=7, version=version)
+                  gemini_api_key="KEY", openrouter_api_key="RKEY", seed=7, version=version)
     graph = graph_mod.load(mode, version)
     # Every version from v3 on renders through Flux as well as Krea2, so it
     # needs the persona's photo and its own Klein LoRA.
@@ -1485,6 +1486,87 @@ def test_the_v10_carousel_gets_the_atlascloud_key_from_the_job(monkeypatch):
     assert [n["inputs"]["api_key"] for n in graph.values()
             if n["class_type"] == "SeedreamEditSequentialAtlas"] == [""]   # the node reads the env
     assert _v10("single", atlascloud_api_key="")                            # the single never needs it
+
+
+def _dangling(graph):
+    return [f"{nid}.{field}" for nid, node in graph.items()
+            for field, value in node["inputs"].items()
+            if isinstance(value, list) and len(value) == 2
+            and isinstance(value[0], str) and value[0] not in graph]
+
+
+HERO = "Famegrid-ready prompt: she leans on a {triggerword} railing at dusk."
+
+
+@pytest.mark.parametrize("mode", ["single", "carousel"])
+def test_radars_hero_prompt_replaces_the_graphs_gemini_call(mode):
+    graph = _v10(mode, hero_prompt=HERO)
+    hero = graph_mod._optional_by_title(graph, graph_mod.TITLE_HERO_PROMPT)
+    assert graph[hero]["class_type"] == "PrimitiveStringMultiline"
+    # Written after the persona, verbatim: nothing in it is a placeholder.
+    assert graph[hero]["inputs"]["value"] == HERO
+    # Its system prompt and the VRAM pass-through in front of it had no other
+    # reader; the crop they hung off still feeds the render.
+    assert "2447" not in graph and "2444" not in graph and "2400" in graph
+    assert not _dangling(graph)
+    readers = [nid for nid, n in graph.items()
+               for v in n["inputs"].values() if v == [hero, 0]]
+    assert readers, "nothing reads the hero prompt"
+    assert graph_mod.describe(graph)["hero_prompt"] == "job"
+
+
+@pytest.mark.parametrize("mode", ["single", "carousel"])
+def test_without_a_hero_prompt_the_graph_writes_its_own_through_openrouter(mode):
+    graph = _v10(mode)
+    hero = graph_mod._optional_by_title(graph, graph_mod.TITLE_HERO_PROMPT)
+    node = graph[hero]
+    assert node["class_type"] == "Ask_Gemini_Batch"
+    assert node["inputs"]["provider"] == "openrouter"
+    assert node["inputs"]["fallback_model"].startswith("x-ai/grok")
+    assert node["inputs"]["openrouter_api_key"] == "router-key"
+    assert graph_mod.describe(graph)["hero_prompt"] == "in-graph"
+    assert _v10(mode, hero_prompt="   ")[hero]["class_type"] == "Ask_Gemini_Batch"
+
+
+def test_the_v10_slide_instructions_go_through_openrouter_too():
+    graph = _v10("carousel", hero_prompt=HERO)
+    slides = [n for n in graph.values() if n["class_type"] == "Ask_Gemini_Batch"]
+    assert len(slides) == 1
+    assert slides[0]["_meta"]["title"] == "Slide instructions"
+    assert slides[0]["inputs"]["provider"] == "openrouter"
+    assert slides[0]["inputs"]["openrouter_api_key"] == "router-key"
+
+
+@pytest.mark.parametrize("mode", ["single", "carousel"])
+def test_v10_needs_no_gemini_key_but_does_need_openrouter(mode, monkeypatch):
+    monkeypatch.delenv(graph_mod.OPENROUTER_ENV, raising=False)
+    monkeypatch.delenv(graph_mod.GEMINI_ENV, raising=False)
+    assert _v10(mode, gemini_api_key="")
+    with pytest.raises(graph_mod.MissingKey, match="openrouter_api_key"):
+        _v10(mode, openrouter_api_key="")
+    monkeypatch.setenv(graph_mod.OPENROUTER_ENV, "from-env")
+    graph = _v10(mode, openrouter_api_key="")
+    assert all(n["inputs"]["openrouter_api_key"] == "" for n in graph.values()
+               if n["class_type"] == "Ask_Gemini_Batch")          # the node reads the env
+
+
+def test_a_single_v10_with_a_hero_prompt_needs_no_llm_key_at_all(monkeypatch):
+    monkeypatch.delenv(graph_mod.OPENROUTER_ENV, raising=False)
+    graph = _v10("single", hero_prompt=HERO, gemini_api_key="", openrouter_api_key="")
+    assert not [n for n in graph.values() if n["class_type"] == "Ask_Gemini_Batch"]
+
+
+def test_older_versions_still_need_the_gemini_key(monkeypatch):
+    monkeypatch.delenv(graph_mod.GEMINI_ENV, raising=False)
+    with pytest.raises(graph_mod.MissingKey, match="gemini_api_key"):
+        graph_mod.patch("single", **dict(BASE, gemini_api_key="", version="v9",
+                                         eye_colour="green eyes"))
+
+
+def test_the_shipped_v10_graphs_carry_no_openrouter_key():
+    for name in ("single_photo_v10.json", "carousel_v10.json"):
+        shipped = json.loads((ROOT / "workflows" / name).read_text())
+        assert all(n["inputs"].get("openrouter_api_key", "") == "" for n in shipped.values())
 
 
 def test_the_v10_carousel_slide_count_comes_from_the_job():

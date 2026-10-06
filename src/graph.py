@@ -160,6 +160,22 @@ CAROUSEL_SLIDES_RANGE = (1, 9)      # Instagram takes ten images per post
 ATLAS_NODE_CLASSES = ("SeedreamEditSequentialAtlas",)
 ATLAS_ENV = "ATLASCLOUD_API_KEY"
 
+# v10's hero prompt. Radar writes it before the job is sent — Gemini through
+# OpenRouter, Grok when Gemini refuses, and a photo both refuse is skipped
+# there rather than burning a GPU on ten refusals and a stopped run. When the
+# job carries it, the Gemini node holding this title is swapped for a plain
+# text node with the prompt in it; when it does not, the node runs as shipped
+# (OpenRouter with the same fallback) so a job without one still renders.
+TITLE_HERO_PROMPT = "Hero prompt"
+
+# Gemini nodes set to provider "openrouter" read this key. Like AtlasCloud's
+# it comes with the job, or from the worker's environment.
+OPENROUTER_ENV = "OPENROUTER_API_KEY"
+GEMINI_ENV = "GOOGLE_API_KEY"
+
+# Nodes ComfyUI runs for their own sake. Never pruned as orphans.
+OUTPUT_CLASSES = ("SaveImage", "PreviewImage", "PreviewAny")
+
 SUBJECT_PLACEHOLDER = "{subject}"
 
 # v7 asks Gemini to refer to the person by the trigger word the character LoRA
@@ -246,6 +262,11 @@ def _sage_requested() -> bool:
 
 class GraphError(RuntimeError):
     """The graph is not shaped the way the patcher expects."""
+
+
+class MissingKey(GraphError):
+    """The graph calls a service the job brought no key for. The job's fault,
+    not the graph's: sending it again unchanged fails the same way."""
 
 
 def bypass(graph: dict, class_type: str, passthrough: dict[int, str]) -> list[str]:
@@ -489,6 +510,78 @@ def _set_trigger(graph: dict, trigger_word: str, description: str = "",
     return patched
 
 
+def _links(value) -> bool:
+    return isinstance(value, list) and len(value) == 2 and isinstance(value[0], str)
+
+
+def _drop_orphans(graph: dict, candidates: list[str]) -> list[str]:
+    """Remove the given nodes once nothing reads them, and then their inputs.
+
+    Swapping the hero's Gemini node for a text node leaves its system prompt
+    and the VRAM-clearing pass-through in front of it with no reader. ComfyUI
+    would skip them anyway; dropping them keeps the logged graph honest.
+    """
+    removed = []
+    queue = list(candidates)
+    while queue:
+        nid = queue.pop()
+        node = graph.get(nid)
+        if node is None or node.get("class_type") in OUTPUT_CLASSES:
+            continue
+        if any(_links(v) and v[0] == nid
+               for other in graph.values() for v in (other.get("inputs") or {}).values()):
+            continue
+        queue += [v[0] for v in (node.get("inputs") or {}).values() if _links(v)]
+        del graph[nid]
+        removed.append(nid)
+    return removed
+
+
+def _set_hero_prompt(graph: dict, hero_prompt: str | None) -> bool:
+    """Put Radar's hero prompt in place of the Gemini node that would write it.
+
+    The node keeps its id, so everything wired to it reads the prompt instead.
+    Returns whether the swap happened.
+    """
+    node_id = _optional_by_title(graph, TITLE_HERO_PROMPT)
+    text = (hero_prompt or "").strip()
+    if node_id is None or not text:
+        return False
+    old = graph[node_id]
+    upstream = [v[0] for v in (old.get("inputs") or {}).values() if _links(v)]
+    graph[node_id] = {
+        "inputs": {"value": text},
+        "class_type": "PrimitiveStringMultiline",
+        "_meta": {"title": TITLE_HERO_PROMPT},
+    }
+    _drop_orphans(graph, upstream)
+    return True
+
+
+def _set_llm_keys(graph: dict, where: str, gemini_api_key: str,
+                  openrouter_api_key: str) -> None:
+    """Give every Gemini node the key its provider needs, checked up front.
+
+    A node that cannot reach its model fails minutes in, after the hero has
+    been rendered; better to refuse the job before anything runs.
+    """
+    gemini_key = (gemini_api_key or "").strip()
+    router_key = (openrouter_api_key or "").strip()
+    for nid in [n for n, node in graph.items() if node.get("class_type") == "Ask_Gemini_Batch"]:
+        inputs = graph[nid]["inputs"]
+        title = (graph[nid].get("_meta") or {}).get("title", nid)
+        inputs["api_key"] = gemini_key
+        if inputs.get("provider") == "openrouter":
+            if not router_key and not os.environ.get(OPENROUTER_ENV, "").strip():
+                raise MissingKey(
+                    f"{where} asks OpenRouter in {title!r} but no openrouter_api_key "
+                    f"was given and {OPENROUTER_ENV} is not set on the worker")
+        elif not gemini_key and not os.environ.get(GEMINI_ENV, "").strip():
+            raise MissingKey(f"{where} asks Gemini in {title!r} but no gemini_api_key was given")
+        if "openrouter_api_key" in inputs:
+            inputs["openrouter_api_key"] = router_key   # "" lets the node read the env
+
+
 def _randomise_seeds(graph: dict, rng: random.Random) -> int:
     """Every seed field, including the Gemini ones.
 
@@ -512,7 +605,7 @@ def patch(
     lora_name: str,
     trigger_word: str,
     description: str,
-    gemini_api_key: str,
+    gemini_api_key: str = "",
     seed: int | None = None,
     version: str = DEFAULT_VERSION,
     persona_reference: str | None = None,
@@ -523,6 +616,8 @@ def patch(
     eye_colour: str = "",
     atlascloud_api_key: str = "",
     carousel_slides: int | None = None,
+    openrouter_api_key: str = "",
+    hero_prompt: str | None = None,
 ) -> dict:
     """Return a job-ready copy of the graph. The template on disk is untouched.
 
@@ -605,9 +700,12 @@ def patch(
             f"{version}/{mode} has no persona placeholder in any prompt — it "
             f"would render whoever the graph was exported with")
 
-    # Every Gemini node gets the key from config; none is baked into the file.
-    for nid in _by_class(graph, "Ask_Gemini_Batch"):
-        graph[nid]["inputs"]["api_key"] = gemini_api_key
+    # After the persona is written, so nothing in Radar's prompt is mistaken
+    # for a placeholder.
+    _set_hero_prompt(graph, hero_prompt)
+
+    # Every Gemini node gets its key from the job; none is baked into the file.
+    _set_llm_keys(graph, f"{version}/{mode}", gemini_api_key, openrouter_api_key)
 
     # v10's AtlasCloud nodes. Checked here rather than left to the node: it
     # would fail after the hero had already been rendered, minutes in.
@@ -615,7 +713,7 @@ def patch(
     if atlas_nodes:
         key = (atlascloud_api_key or "").strip()
         if not key and not os.environ.get(ATLAS_ENV, "").strip():
-            raise GraphError(
+            raise MissingKey(
                 f"{version}/{mode} calls AtlasCloud but no atlascloud_api_key was "
                 f"given and {ATLAS_ENV} is not set on the worker")
         for nid in atlas_nodes:
@@ -661,5 +759,13 @@ def describe(graph: dict) -> dict[str, Any]:
         "nodes": len(graph),
         "image": graph[_by_title(graph, TITLE_INPUT_IMAGE)[0]]["inputs"]["image"],
         "lora": character_lora_of(graph),
-        "gemini_nodes": len(_by_class(graph, "Ask_Gemini_Batch")),
+        "gemini_nodes": sum(n.get("class_type") == "Ask_Gemini_Batch" for n in graph.values()),
+        "hero_prompt": _hero_prompt_source(graph),
     }
+
+
+def _hero_prompt_source(graph: dict) -> str | None:
+    node_id = _optional_by_title(graph, TITLE_HERO_PROMPT)
+    if node_id is None:
+        return None
+    return "job" if graph[node_id]["class_type"] == "PrimitiveStringMultiline" else "in-graph"

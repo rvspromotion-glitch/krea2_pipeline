@@ -80,16 +80,21 @@
       "seed": 1596651428,
       "temperature": 0.5,
       "num_predict": 0,
-      "max_retries": 10,
+      "max_retries": 3,
       "on_failure": "stop",
       "images": [
         "2444",
         0
-      ]
+      ],
+      "provider": "openrouter",
+      "openrouter_api_key": "",
+      "openrouter_model": "google/gemini-3.1-flash-lite-preview",
+      "fallback_model": "x-ai/grok-4.3",
+      "refusals_before_fallback": 2
     },
     "class_type": "Ask_Gemini_Batch",
     "_meta": {
-      "title": "Ask Gemini (Batch)"
+      "title": "Hero prompt"
     }
   },
   "977": {
@@ -617,16 +622,21 @@
       "seed": 1596651405,
       "temperature": 0.25,
       "num_predict": 0,
-      "max_retries": 10,
+      "max_retries": 3,
       "on_failure": "stop",
       "images": [
         "2535",
         0
-      ]
+      ],
+      "provider": "openrouter",
+      "openrouter_api_key": "",
+      "openrouter_model": "google/gemini-3.1-flash-lite-preview",
+      "fallback_model": "x-ai/grok-4.3",
+      "refusals_before_fallback": 2
     },
     "class_type": "Ask_Gemini_Batch",
     "_meta": {
-      "title": "Ask Gemini (Batch)"
+      "title": "Slide instructions"
     }
   },
   "2522": {
