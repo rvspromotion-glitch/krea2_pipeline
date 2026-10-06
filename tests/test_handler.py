@@ -233,3 +233,37 @@ def test_a_set_that_cannot_fit_is_an_output_error_not_a_lost_render(stub, monkey
     stub["images"] = [_grainy_png(0, (400, 500))]
     out = handler_mod.handler(job())
     assert out["kind"] == "output" and "fewer carousel slides" in out["error"]
+
+
+# ── Output format ────────────────────────────────────────────────────────────
+
+def test_png_is_sent_as_the_png_comfyui_saved(stub):
+    stub["images"] = [_grainy_png(0, (400, 500))]
+    out = handler_mod.handler(job(output_format="png"))
+    assert "error" not in out and out["format"] == "png" and out["quality"] is None
+    assert base64.b64decode(out["images"][0]) == stub["images"][0]
+    assert "format_note" not in out
+
+
+@pytest.mark.parametrize("asked", [None, "", "jpeg", "jpg", "JPG"])
+def test_jpeg_is_the_default_and_jpg_means_jpeg(stub, asked):
+    stub["images"] = [_grainy_png(0, (400, 500))]
+    out = handler_mod.handler(job(output_format=asked))
+    assert out["format"] == "jpeg"
+    assert base64.b64decode(out["images"][0])[:2] == b"\xff\xd8"
+
+
+def test_a_png_set_over_the_limit_comes_back_as_jpeg_rather_than_lost(stub, monkeypatch):
+    monkeypatch.delenv("ATLASCLOUD_API_KEY", raising=False)
+    stub["images"] = [_grainy_png(i) for i in range(4)]
+    out = handler_mod.handler(job(mode="carousel", workflow_version="v10", eye_colour="grey eyes",
+                                  atlascloud_api_key="atlas-1", output_format="png"))
+    assert "error" not in out and out["format"] == "jpeg"
+    assert "PNG" in out["format_note"] and "JPEG" in out["format_note"]
+    assert sum(len(i) for i in out["images"]) <= handler_mod.RESULT_BUDGET
+
+
+def test_an_unknown_output_format_is_an_input_error(stub):
+    out = handler_mod.handler(job(output_format="webp"))
+    assert out["kind"] == "input" and "output_format" in out["error"]
+    assert stub["submitted"] is None

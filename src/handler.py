@@ -26,13 +26,17 @@ Job input
     atlascloud_api_key  v10 carousel: Seedream on AtlasCloud draws the slides
                     (else ATLASCLOUD_API_KEY on the worker)
     carousel_slides v10 carousel: slides after the hero, 1-9 (graph default 3)
+    output_format   "jpeg" (default) or "png"
     seed            optional, for reproducing a specific run
 
 Job output
 ----------
-    images          list of base64 JPEGs — 1 for single, 4 for a carousel
+    images          list of base64 images — 1 for single, 4 for a carousel
                     (v10: the hero plus carousel_slides)
-    format          "jpeg"; quality: the JPEG quality the set was encoded at
+    format          what they were sent as: "jpeg" or "png". A PNG set over
+                    the limit comes back as JPEG instead, with format_note
+                    saying so
+    quality         the JPEG quality the set was encoded at (None for PNG)
     count, mode, seed, duration_s
 
 The whole result has to fit RunPod's 10 MB limit for /run results. A result
@@ -99,6 +103,55 @@ def _jpeg(data: bytes, quality: int, subsampling: int) -> bytes:
         img.convert("RGB").save(out, "JPEG", quality=quality, subsampling=subsampling,
                                 optimize=True)
         return out.getvalue()
+
+
+OUTPUT_FORMATS = ("jpeg", "png")
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def output_format(raw) -> str:
+    value = str(raw or "jpeg").strip().lower()
+    value = {"jpg": "jpeg"}.get(value, value)
+    if value not in OUTPUT_FORMATS:
+        raise JobError(f"output_format must be one of {OUTPUT_FORMATS}, got {raw!r}")
+    return value
+
+
+def _png(data: bytes) -> bytes:
+    """ComfyUI saves PNG already; anything else is converted."""
+    if data[:8] == PNG_MAGIC:
+        return data
+    from PIL import Image
+
+    with Image.open(io.BytesIO(data)) as img:
+        out = io.BytesIO()
+        img.save(out, "PNG")
+        return out.getvalue()
+
+
+def encode_output(images: list[bytes], fmt: str) -> tuple[list[str], str, int | None, str]:
+    """The images in the asked-for format: (base64 list, format, quality, note).
+
+    PNG is lossless and several times the size, so a PNG set over RunPod's
+    limit is sent as JPEG rather than lost after the render was paid for —
+    the note says so.
+    """
+    if fmt == "png":
+        try:
+            b64 = [base64.b64encode(_png(raw)).decode() for raw in images]
+        except Exception as exc:
+            note = f"PNG encoding failed ({exc}), sent as JPEG"
+        else:
+            total = sum(len(s) for s in b64)
+            if total <= RESULT_BUDGET:
+                return b64, "png", None, ""
+            note = (f"{len(images)} PNG(s) come to {total / 1e6:.1f} MB, over RunPod's "
+                    f"{RESULT_BUDGET / 1e6:.0f} MB limit; sent as JPEG")
+        log.warning(note)
+        b64, quality = encode_images(images)
+        return b64, "jpeg", quality, note
+    b64, quality = encode_images(images)
+    return b64, "jpeg", quality, ""
 
 
 def encode_images(images: list[bytes]) -> tuple[list[str], int]:
@@ -263,6 +316,7 @@ def run_job(payload: dict) -> dict:
     eye_colour = (payload.get("eye_colour") or "").strip()
     atlas_key = (payload.get("atlascloud_api_key") or "").strip()
     carousel_slides = payload.get("carousel_slides")
+    fmt = output_format(payload.get("output_format"))
     seed = payload.get("seed")
 
     comfy.wait_until_ready()
@@ -311,19 +365,22 @@ def run_job(payload: dict) -> dict:
         # graph changed shape, which is worth seeing in the logs immediately.
         log.warning("%s produced %d image(s), expected %d", mode, len(images), expected)
 
-    encoded, quality = encode_images(images)
-    log.info("returning %d image(s) as JPEG q%d, %.1f MB", len(encoded), quality,
-             sum(len(s) for s in encoded) / 1e6)
-    return {
+    encoded, sent_as, quality, note = encode_output(images, fmt)
+    log.info("returning %d image(s) as %s%s, %.1f MB", len(encoded), sent_as.upper(),
+             f" q{quality}" if quality else "", sum(len(s) for s in encoded) / 1e6)
+    result = {
         "mode": mode,
         "workflow_version": version,
         "count": len(images),
         "seed": seed,
         "duration_s": round(time.time() - started, 1),
-        "format": "jpeg",
+        "format": sent_as,
         "quality": quality,
         "images": encoded,
     }
+    if note:
+        result["format_note"] = note
+    return result
 
 
 def handler(event: dict) -> dict:
