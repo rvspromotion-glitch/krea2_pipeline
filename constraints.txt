@@ -10,6 +10,11 @@
 # ask for, and headless opencv avoids pulling GUI libs into a worker.
 numpy<2
 protobuf<5
+# runpod wants fastapi[all]>=0.141.1, and from 0.142.0 (29 Sep 2026) fastapi's
+# "all" extra pulls in OpenTelemetry, whose protobuf floor is 5 — against the
+# protobuf<5 above, the build cannot resolve at all. Lift this only together
+# with that pin.
+fastapi<0.142
 transformers>=4.45.0
 safetensors
 mediapipe==0.10.14
