@@ -25,9 +25,16 @@ Job input
 
 Job output
 ----------
-    images          list of base64 PNGs — 1 for single, 4 for a carousel
+    images          list of base64 JPEGs — 1 for single, 4 for a carousel
                     (v10: the hero plus carousel_slides)
+    format          "jpeg"; quality: the JPEG quality the set was encoded at
     count, mode, seed, duration_s
+
+The whole result has to fit RunPod's 10 MB limit for /run results. A result
+over it is refused when the worker hands it back ("Failed to return job
+results | 400"), after the render has been paid for — so the images are sent
+as JPEG, stepped down in quality until the set fits, and a set that cannot
+fit comes back as an "output" error instead.
 
 `images` is always a list. A carousel's four entries are slides of one post, not
 four alternatives, and the caller is expected to keep them ordered.
@@ -35,6 +42,7 @@ four alternatives, and the caller is expected to keep them ordered.
 from __future__ import annotations
 
 import base64
+import io
 import logging
 import os
 import time
@@ -62,6 +70,51 @@ JOB_TIMEOUT = int(os.getenv("JOB_TIMEOUT", "1800"))
 
 class JobError(RuntimeError):
     """The job input is unusable."""
+
+
+class OutputTooLarge(RuntimeError):
+    """The images cannot fit RunPod's result limit at any quality we accept."""
+
+
+# RunPod refuses a /run result over 10 MB. The budget leaves room for the JSON
+# around the images.
+RESULT_BUDGET = int(os.getenv("RESULT_BUDGET_BYTES", "9000000"))
+
+# Tried in order until the set fits. The graph's own last pass is a JPEG
+# simulation at q92, so 95 with full-resolution colour loses nothing visible;
+# the later steps only come into play for a long carousel.
+JPEG_STEPS = ((95, 0), (95, 2), (92, 2), (88, 2), (84, 2), (80, 2))
+
+
+def _jpeg(data: bytes, quality: int, subsampling: int) -> bytes:
+    from PIL import Image
+
+    with Image.open(io.BytesIO(data)) as img:
+        out = io.BytesIO()
+        img.convert("RGB").save(out, "JPEG", quality=quality, subsampling=subsampling,
+                                optimize=True)
+        return out.getvalue()
+
+
+def encode_images(images: list[bytes]) -> tuple[list[str], int]:
+    """The images as base64 JPEGs that fit the result budget, and the quality
+    used. Bytes that are not an image are passed through as they are."""
+    total = 0
+    for quality, subsampling in JPEG_STEPS:
+        encoded = []
+        for raw in images:
+            try:
+                encoded.append(_jpeg(raw, quality, subsampling))
+            except Exception:
+                encoded.append(raw)
+        b64 = [base64.b64encode(e).decode() for e in encoded]
+        total = sum(len(s) for s in b64)
+        if total <= RESULT_BUDGET:
+            return b64, quality
+    raise OutputTooLarge(
+        f"{len(images)} image(s) come to {total / 1e6:.1f} MB even as JPEG quality "
+        f"{JPEG_STEPS[-1][0]} — RunPod takes {RESULT_BUDGET / 1e6:.0f} MB per result. "
+        f"Ask for fewer carousel slides.")
 
 
 def _require(payload: dict, key: str) -> str:
@@ -247,13 +300,18 @@ def run_job(payload: dict) -> dict:
         # graph changed shape, which is worth seeing in the logs immediately.
         log.warning("%s produced %d image(s), expected %d", mode, len(images), expected)
 
+    encoded, quality = encode_images(images)
+    log.info("returning %d image(s) as JPEG q%d, %.1f MB", len(encoded), quality,
+             sum(len(s) for s in encoded) / 1e6)
     return {
         "mode": mode,
         "workflow_version": version,
         "count": len(images),
         "seed": seed,
         "duration_s": round(time.time() - started, 1),
-        "images": [base64.b64encode(i).decode() for i in images],
+        "format": "jpeg",
+        "quality": quality,
+        "images": encoded,
     }
 
 
@@ -265,6 +323,9 @@ def handler(event: dict) -> dict:
     except JobError as exc:
         log.error("bad job input: %s", exc)
         return {"error": str(exc), "kind": "input"}
+    except OutputTooLarge as exc:
+        log.error("result too large: %s", exc)
+        return {"error": str(exc), "kind": "output"}
     except comfy.ComfyTimeout as exc:
         log.error("timeout: %s", exc)
         comfy.free_memory()
