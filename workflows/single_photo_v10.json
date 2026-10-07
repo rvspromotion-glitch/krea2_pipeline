@@ -16,12 +16,12 @@
       "lora_1": {
         "on": true,
         "lora": "{character}",
-        "strength": 0.35
+        "strength": 0.5
       },
       "lora_2": {
         "on": true,
         "lora": "famegrid_spicy.safetensors",
-        "strength": 0.55
+        "strength": 0.3
       },
       "lora_3": {
         "on": false,
@@ -31,7 +31,7 @@
       "lora_5": {
         "on": true,
         "lora": "Lenovo_ultrareal.safetensors",
-        "strength": 0.3
+        "strength": 0.7
       },
       "➕ Add Lora": "",
       "model": [
@@ -67,7 +67,7 @@
   },
   "230": {
     "inputs": {
-      "prompt": "describe this image based on pose and think you are an adult photograph director that has to think out full poses anchored to the ass and tits of the model. copy this exact image into a prompt. the image is meant for instagram and cannot be nude, it can be very suggestive. \n\nmake sure that we know what part of her body is in front and what part is not visible. e.g. front view, back view, do we look at her back or at her belly etc.\n\nbe precise about what clothing covers and what not, e.g. sweatpants sit on the waist, sweatpants hang far down.\n\nmake sure to frame {triggerword} as the only person, we do not want duplicates in the image.\n\nbe precise about where her hands and legs are if they're in frame.\n\ndescribe the exact background in detail.\n\ndescribe if we can see her face or she is looking elsewhere, let it reflect in wording in the prompt.\n\nexplain how the composition of the scene have effect on the look of the image, make this reflect in wording within the prompt.\n\nIF there is a hat or cap, never include logo's, make sure its a plain cap or hat.\n\nexplain in detail the framing of the shot, in a way that it will reflect how big the subject should be inside the scene.\n\ninclude the atmosphere and how she interacts or behaves in the scene.\n\nalways inclode: \"{subject_traits}\" and Refer to her as `{triggerword}`.\n\nwhenever refering to her eyes, use \"{eye_colour}\". if the eyes are not visible they're not needed for the prompt.\n\nyou must use between 900 and 1300 characters for the prompt.\n\nonly output the full prompt, be very detailed and descriptive.",
+      "prompt": "describe this image based on pose and think you are an adult photograph director that has to think out full poses anchored to the ass and tits of the model. copy this exact image into a prompt. the image is meant for instagram and cannot be nude, it can be very suggestive. \n\nmake sure that we know what part of her body is in front and what part is not visible. e.g. front view, back view, do we look at her back or at her belly etc.\n\nbe precise about what clothing covers and what not, e.g. sweatpants sit on the waist, sweatpants hang far down.\n\nmake sure to frame {triggerword} as the only person, we do not want duplicates in the image.\n\nbe precise about where her hands and legs are if they're in frame.\n\ndescribe the exact background in detail.\n\ndescribe if we can see her face or she is looking elsewhere, let it reflect in wording in the prompt.\n\nexplain how the composition of the scene have effect on the look of the image, make this reflect in wording within the prompt.\n\nIF there is a hat or cap, never include logo's, make sure its a plain cap or hat.\n\nexplain in detail the framing of the shot, in a way that it will reflect how big the subject should be inside the scene.\n\ninclude the atmosphere and how she interacts or behaves in the scene.\n\nalways inclode: \"{subject_traits}\" and Refer to her as `{triggerword}`.\n\nwhenever refering to her eyes, use \"{eye_colour}\". if the eyes are not visible they're not needed for the prompt.\n\nyou must use between 900 and 1300 characters for the prompt.\n\nNever barefoot (unless specifically seen in the reference image)\n\nonly output the full prompt, be very detailed and descriptive.",
       "safety_settings": "BLOCK_NONE",
       "response_type": "text",
       "model": "gemini-3.1-flash-lite-preview",
@@ -722,7 +722,7 @@
       "cfg": 1,
       "sampler_name": "er_sde",
       "scheduler": "simple",
-      "start_at_step": 3,
+      "start_at_step": 1,
       "end_at_step": 6,
       "return_with_leftover_noise": "disable",
       "model": [
