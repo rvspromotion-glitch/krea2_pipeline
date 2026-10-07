@@ -233,3 +233,107 @@ def test_a_set_that_cannot_fit_is_an_output_error_not_a_lost_render(stub, monkey
     stub["images"] = [_grainy_png(0, (400, 500))]
     out = handler_mod.handler(job())
     assert out["kind"] == "output" and "fewer carousel slides" in out["error"]
+
+
+# ── Output format ────────────────────────────────────────────────────────────
+
+def test_png_is_sent_as_the_png_comfyui_saved(stub):
+    stub["images"] = [_grainy_png(0, (400, 500))]
+    out = handler_mod.handler(job(output_format="png"))
+    assert "error" not in out and out["format"] == "png" and out["quality"] is None
+    assert base64.b64decode(out["images"][0]) == stub["images"][0]
+    assert "format_note" not in out
+
+
+@pytest.mark.parametrize("asked", [None, "", "jpeg", "jpg", "JPG"])
+def test_jpeg_is_the_default_and_jpg_means_jpeg(stub, asked):
+    stub["images"] = [_grainy_png(0, (400, 500))]
+    out = handler_mod.handler(job(output_format=asked))
+    assert out["format"] == "jpeg"
+    assert base64.b64decode(out["images"][0])[:2] == b"\xff\xd8"
+
+
+def test_a_png_set_over_the_limit_comes_back_as_jpeg_rather_than_lost(stub, monkeypatch):
+    monkeypatch.delenv("ATLASCLOUD_API_KEY", raising=False)
+    stub["images"] = [_grainy_png(i) for i in range(4)]
+    out = handler_mod.handler(job(mode="carousel", workflow_version="v10", eye_colour="grey eyes",
+                                  atlascloud_api_key="atlas-1", output_format="png"))
+    assert "error" not in out and out["format"] == "jpeg"
+    assert "PNG" in out["format_note"] and "JPEG" in out["format_note"]
+    assert sum(len(i) for i in out["images"]) <= handler_mod.RESULT_BUDGET
+
+
+def test_an_unknown_output_format_is_an_input_error(stub):
+    out = handler_mod.handler(job(output_format="webp"))
+    assert out["kind"] == "input" and "output_format" in out["error"]
+    assert stub["submitted"] is None
+
+
+# ── Too big for the result: uploaded to the caller instead ───────────────────
+
+UPLOAD = "https://radar.example/render-upload/tok123"
+
+
+@pytest.fixture
+def uploads(monkeypatch):
+    state = {"puts": [], "replies": []}
+
+    class _R:
+        def __init__(self, status):
+            self.status_code, self.text = status, "x"
+
+    def put(url, data, headers, timeout):
+        state["puts"].append((url, data, headers["Content-Type"]))
+        return _R(state["replies"].pop(0) if state["replies"] else 201)
+
+    monkeypatch.setattr(handler_mod.requests, "put", put)
+    monkeypatch.setattr(handler_mod.time, "sleep", lambda s: None)
+    return state
+
+
+def _png_carousel(stub, monkeypatch, **over):
+    monkeypatch.delenv("ATLASCLOUD_API_KEY", raising=False)
+    stub["images"] = [_grainy_png(i) for i in range(4)]
+    return handler_mod.handler(job(mode="carousel", workflow_version="v10", eye_colour="grey eyes",
+                                   atlascloud_api_key="atlas-1", output_format="png", **over))
+
+
+def test_a_png_carousel_too_big_for_runpod_is_uploaded_untouched(stub, monkeypatch, uploads):
+    out = _png_carousel(stub, monkeypatch, upload_url=UPLOAD)
+    assert "error" not in out and out["format"] == "png" and out["images"] == []
+    assert [u for u, _, _ in uploads["puts"]] == [f"{UPLOAD}/{i}" for i in range(4)]
+    assert [d for _, d, _ in uploads["puts"]] == stub["images"]          # the PNGs as saved
+    assert {m for _, _, m in uploads["puts"]} == {"image/png"}
+    import hashlib
+    assert [u["sha256"] for u in out["uploaded"]] == [
+        hashlib.sha256(i).hexdigest() for i in stub["images"]]
+    assert "format_note" not in out
+
+
+def test_what_fits_the_result_is_never_uploaded(stub, uploads):
+    stub["images"] = [_grainy_png(0, (400, 500))]
+    out = handler_mod.handler(job(output_format="png", upload_url=UPLOAD))
+    assert out["format"] == "png" and len(out["images"]) == 1 and not uploads["puts"]
+
+
+def test_a_flaky_upload_is_tried_again(stub, monkeypatch, uploads):
+    uploads["replies"] = [502, 201]
+    out = _png_carousel(stub, monkeypatch, upload_url=UPLOAD)
+    assert out["format"] == "png" and len(out["uploaded"]) == 4
+    assert [u for u, _, _ in uploads["puts"]][:2] == [f"{UPLOAD}/0"] * 2
+
+
+def test_a_refused_upload_falls_back_to_jpeg_in_the_result(stub, monkeypatch, uploads):
+    uploads["replies"] = [404]
+    out = _png_carousel(stub, monkeypatch, upload_url=UPLOAD)
+    assert "error" not in out and out["format"] == "jpeg" and len(out["images"]) == 4
+    assert "upload failed" in out["format_note"]
+    assert len(uploads["puts"]) == 1                                  # 4xx is not retried
+
+
+def test_a_jpeg_set_too_big_even_stepped_down_is_uploaded(stub, monkeypatch, uploads):
+    monkeypatch.setattr(handler_mod, "RESULT_BUDGET", 50_000)
+    stub["images"] = [_grainy_png(0, (400, 500))]
+    out = handler_mod.handler(job(upload_url=UPLOAD))
+    assert out["format"] == "jpeg" and out["quality"] == 95 and len(out["uploaded"]) == 1
+    assert uploads["puts"][0][1][:2] == b"\xff\xd8"

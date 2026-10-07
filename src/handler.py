@@ -26,13 +26,21 @@ Job input
     atlascloud_api_key  v10 carousel: Seedream on AtlasCloud draws the slides
                     (else ATLASCLOUD_API_KEY on the worker)
     carousel_slides v10 carousel: slides after the hero, 1-9 (graph default 3)
+    output_format   "jpeg" (default) or "png"
+    upload_url      where to PUT images that will not fit the result (Radar
+                    opens one per render); each goes to <upload_url>/<index>
     seed            optional, for reproducing a specific run
 
 Job output
 ----------
-    images          list of base64 JPEGs — 1 for single, 4 for a carousel
+    images          list of base64 images — 1 for single, 4 for a carousel
                     (v10: the hero plus carousel_slides)
-    format          "jpeg"; quality: the JPEG quality the set was encoded at
+    uploaded        instead of images, when they were sent to upload_url:
+                    [{index, bytes, sha256}] in slide order
+    format          what they were sent as: "jpeg" or "png". A set that fits
+                    neither the result nor an upload comes back as JPEG,
+                    with format_note saying why
+    quality         the JPEG quality the set was encoded at (None for PNG)
     count, mode, seed, duration_s
 
 The whole result has to fit RunPod's 10 MB limit for /run results. A result
@@ -99,6 +107,123 @@ def _jpeg(data: bytes, quality: int, subsampling: int) -> bytes:
         img.convert("RGB").save(out, "JPEG", quality=quality, subsampling=subsampling,
                                 optimize=True)
         return out.getvalue()
+
+
+OUTPUT_FORMATS = ("jpeg", "png")
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def output_format(raw) -> str:
+    value = str(raw or "jpeg").strip().lower()
+    value = {"jpg": "jpeg"}.get(value, value)
+    if value not in OUTPUT_FORMATS:
+        raise JobError(f"output_format must be one of {OUTPUT_FORMATS}, got {raw!r}")
+    return value
+
+
+def _png(data: bytes) -> bytes:
+    """ComfyUI saves PNG already; anything else is converted."""
+    if data[:8] == PNG_MAGIC:
+        return data
+    from PIL import Image
+
+    with Image.open(io.BytesIO(data)) as img:
+        out = io.BytesIO()
+        img.save(out, "PNG")
+        return out.getvalue()
+
+
+UPLOAD_TRIES = 3
+
+
+class UploadFailed(RuntimeError):
+    pass
+
+
+def upload_images(upload_url: str, blobs: list[bytes]) -> list[dict]:
+    """PUT each image to the caller's slot, in order. Returns what was sent.
+
+    A 4xx is final (unknown or expired slot, refused bytes); a network error
+    or 5xx is tried again.
+    """
+    import hashlib
+
+    sent = []
+    for index, blob in enumerate(blobs):
+        mime = "image/png" if blob[:8] == PNG_MAGIC else "image/jpeg"
+        last = None
+        for attempt in range(UPLOAD_TRIES):
+            try:
+                r = requests.put(f"{upload_url.rstrip('/')}/{index}", data=blob,
+                                 headers={"Content-Type": mime}, timeout=180)
+            except requests.RequestException as exc:
+                last = str(exc)
+            else:
+                if r.status_code < 300:
+                    break
+                last = f"HTTP {r.status_code}: {r.text[:200]}"
+                if r.status_code < 500:
+                    raise UploadFailed(f"image {index}: {last}")
+            if attempt + 1 < UPLOAD_TRIES:
+                time.sleep(2 ** attempt)
+        else:
+            raise UploadFailed(f"image {index}: {last}")
+        sent.append({"index": index, "bytes": len(blob),
+                     "sha256": hashlib.sha256(blob).hexdigest()})
+    return sent
+
+
+def encode_output(images: list[bytes], fmt: str, upload_url: str = "") -> dict:
+    """The images in the asked-for format, inline when they fit the result.
+
+    Returns {images, format, quality, uploaded?, note}. A set too large for
+    RunPod's 10 MB (a PNG carousel, a long JPEG one) goes to upload_url as it
+    is. Without one, or if the upload fails, it is stepped down to a JPEG that
+    fits rather than lost after the render was paid for — the note says why.
+    """
+    note = ""
+    if fmt == "png":
+        try:
+            blobs = [_png(raw) for raw in images]
+        except Exception as exc:
+            note = f"PNG encoding failed ({exc}), sent as JPEG"
+        else:
+            b64 = [base64.b64encode(b).decode() for b in blobs]
+            total = sum(len(s) for s in b64)
+            if total <= RESULT_BUDGET:
+                return {"images": b64, "format": "png", "quality": None, "note": ""}
+            note = (f"{len(images)} PNG(s) come to {total / 1e6:.1f} MB, over RunPod's "
+                    f"{RESULT_BUDGET / 1e6:.0f} MB limit")
+            if upload_url:
+                try:
+                    sent = upload_images(upload_url, blobs)
+                    log.info("%s; uploaded instead", note)
+                    return {"images": [], "uploaded": sent, "format": "png",
+                            "quality": None, "note": ""}
+                except UploadFailed as exc:
+                    note += f"; upload failed ({exc})"
+            note += "; sent as JPEG"
+        log.warning(note)
+    try:
+        b64, quality = encode_images(images)
+        return {"images": b64, "format": "jpeg", "quality": quality, "note": note}
+    except OutputTooLarge:
+        if not upload_url:
+            raise
+    # A JPEG set too large even stepped down: upload it at full quality.
+    quality, subsampling = JPEG_STEPS[0]
+    blobs = []
+    for raw in images:
+        try:
+            blobs.append(_jpeg(raw, quality, subsampling))
+        except Exception:
+            blobs.append(raw)
+    try:
+        sent = upload_images(upload_url, blobs)
+    except UploadFailed as exc:
+        raise OutputTooLarge(f"{len(images)} image(s) do not fit RunPod's result and the "
+                             f"upload failed ({exc}). Ask for fewer carousel slides.")
+    return {"images": [], "uploaded": sent, "format": "jpeg", "quality": quality, "note": note}
 
 
 def encode_images(images: list[bytes]) -> tuple[list[str], int]:
@@ -263,6 +388,8 @@ def run_job(payload: dict) -> dict:
     eye_colour = (payload.get("eye_colour") or "").strip()
     atlas_key = (payload.get("atlascloud_api_key") or "").strip()
     carousel_slides = payload.get("carousel_slides")
+    fmt = output_format(payload.get("output_format"))
+    upload_url = (payload.get("upload_url") or "").strip()
     seed = payload.get("seed")
 
     comfy.wait_until_ready()
@@ -311,19 +438,27 @@ def run_job(payload: dict) -> dict:
         # graph changed shape, which is worth seeing in the logs immediately.
         log.warning("%s produced %d image(s), expected %d", mode, len(images), expected)
 
-    encoded, quality = encode_images(images)
-    log.info("returning %d image(s) as JPEG q%d, %.1f MB", len(encoded), quality,
-             sum(len(s) for s in encoded) / 1e6)
-    return {
+    out = encode_output(images, fmt, upload_url)
+    sent_as, quality, note = out["format"], out["quality"], out["note"]
+    log.info("returning %d image(s) as %s%s, %s", len(images), sent_as.upper(),
+             f" q{quality}" if quality else "",
+             "uploaded" if out.get("uploaded")
+             else f"{sum(len(s) for s in out['images']) / 1e6:.1f} MB inline")
+    result = {
         "mode": mode,
         "workflow_version": version,
         "count": len(images),
         "seed": seed,
         "duration_s": round(time.time() - started, 1),
-        "format": "jpeg",
+        "format": sent_as,
         "quality": quality,
-        "images": encoded,
+        "images": out["images"],
     }
+    if out.get("uploaded"):
+        result["uploaded"] = out["uploaded"]
+    if note:
+        result["format_note"] = note
+    return result
 
 
 def handler(event: dict) -> dict:
