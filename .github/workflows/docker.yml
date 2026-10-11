@@ -78,6 +78,10 @@ jobs:
           # 10GB per repository, and the torch layer alone is most of that.
           # A dedicated Docker Hub tag holds it instead, which is what turns a
           # code-only change into a few-minute build.
+          # A new value every commit, so the custom-node layer is rebuilt and
+          # `HEAD` refs are fetched again (see the Dockerfile).
+          build-args: |
+            NODES_REFRESH=${{ github.sha }}
           cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/krea2-worker:buildcache
           cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/krea2-worker:buildcache,mode=max
 
