@@ -321,3 +321,17 @@ def test_fastapi_is_held_below_the_release_that_needs_protobuf_5():
     lines = [l.split("#")[0].strip() for l in (REPO / "constraints.txt").read_text().splitlines()]
     assert "protobuf<5" in lines
     assert "fastapi<0.142" in lines
+
+
+def test_custom_nodes_are_fetched_again_on_every_ci_build():
+    """`HEAD` refs only mean anything if the install step re-runs. Cached, it
+    kept the savezipi9 node from before its OpenRouter fallback was merged."""
+    lines = DOCKERFILE.splitlines()
+    install = next(i for i, l in enumerate(lines) if "install_nodes.sh /build/custom_nodes.txt" in l)
+    arg = next(i for i, l in enumerate(lines) if l.startswith("ARG NODES_REFRESH"))
+    run = max(i for i in range(install + 1) if lines[i].startswith("RUN "))
+    assert arg < run, "NODES_REFRESH must be declared before the node install step"
+    assert "${NODES_REFRESH}" in "\n".join(lines[run:install + 1]), \
+        "the node install RUN must use NODES_REFRESH, or a new value does not bust its cache"
+    workflow = (REPO / ".github" / "workflows" / "docker.yml").read_text()
+    assert "NODES_REFRESH=${{ github.sha }}" in workflow

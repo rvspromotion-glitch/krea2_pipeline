@@ -69,9 +69,17 @@ RUN git clone --depth 1 --branch ${COMFYUI_REF} \
     && rm -rf /comfyui/.git \
     && pip install --no-cache-dir --prefer-binary -r /comfyui/requirements.txt
 
+# `HEAD` in custom_nodes.txt has to mean the HEAD of the day of the build. With
+# the registry cache this step only re-ran when custom_nodes.txt or the script
+# changed, so a merged node fix (savezipi9's OpenRouter fallback, 6 Oct) never
+# reached the image built the next day — the night run still hit Gemini's
+# refusals with the old node. CI passes the commit sha here, so every build
+# fetches the node packages afresh; the heavy layers above stay cached.
+ARG NODES_REFRESH=manual
 COPY custom_nodes.txt /build/custom_nodes.txt
 COPY scripts/install_nodes.sh /build/install_nodes.sh
-RUN chmod +x /build/install_nodes.sh \
+RUN echo "[nodes] refresh ${NODES_REFRESH}" \
+    && chmod +x /build/install_nodes.sh \
     && /build/install_nodes.sh /build/custom_nodes.txt /comfyui/custom_nodes
 
 COPY requirements.txt /build/requirements.txt

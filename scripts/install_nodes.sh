@@ -21,6 +21,10 @@ while read -r name repo ref; do
   curl -fSL --retry 5 --retry-delay 3 -o "$tmp" \
     "https://codeload.github.com/${repo}/tar.gz/${ref}"
   mkdir -p "$dest"
+  # The tarball's top directory is <repo>-<full sha>: the commit actually
+  # installed, which `HEAD` alone never tells you when a render misbehaves.
+  top="$(tar -tzf "$tmp" | head -1)" || true
+  echo "[nodes] ${name} is ${top%/}"
   tar -xzf "$tmp" -C "$dest" --strip-components=1
   rm -f "$tmp"
 done < "$LIST"
