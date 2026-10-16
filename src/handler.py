@@ -18,7 +18,8 @@ Job input
     trigger_word    e.g. "3lm1ra"
     description     e.g. "young woman with long platinum blonde hair"
     gemini_api_key  from Radar's settings; never baked into the graph. Only
-                    needed by graphs that call Gemini directly
+                    needed when there is no OpenRouter key: with one, every
+                    graph's Gemini calls go through OpenRouter
     openrouter_api_key  graphs whose Gemini nodes go through OpenRouter (v10)
                     (else OPENROUTER_API_KEY on the worker)
     hero_prompt     v10: the hero prompt Radar wrote; replaces the graph's own

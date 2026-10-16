@@ -558,6 +558,29 @@ def _set_hero_prompt(graph: dict, hero_prompt: str | None) -> bool:
     return True
 
 
+# What an older graph's Gemini node asks OpenRouter for. The same Gemini model
+# under OpenRouter's name, and Grok when it refuses — as the v10 graphs ship.
+OPENROUTER_FALLBACK_MODEL = "x-ai/grok-4.3"
+OPENROUTER_REFUSALS_BEFORE_FALLBACK = 2
+
+
+def _route_through_openrouter(inputs: dict) -> None:
+    """Point a Gemini node exported before the provider switch at OpenRouter.
+
+    Every graph before v10 was exported with Gemini called directly, on a
+    Google key. With an OpenRouter key on the job they go through OpenRouter
+    instead — one key and one bill for every model, and a refused photo
+    falls back to Grok rather than stopping the run. The node keeps its own
+    model; only the route changes.
+    """
+    model = str(inputs.get("model") or "gemini-3.1-flash-lite-preview").strip()
+    inputs["provider"] = "openrouter"
+    inputs["openrouter_model"] = model if "/" in model else f"google/{model}"
+    inputs.setdefault("fallback_model", OPENROUTER_FALLBACK_MODEL)
+    inputs.setdefault("refusals_before_fallback", OPENROUTER_REFUSALS_BEFORE_FALLBACK)
+    inputs.setdefault("openrouter_api_key", "")
+
+
 def _set_llm_keys(graph: dict, where: str, gemini_api_key: str,
                   openrouter_api_key: str) -> None:
     """Give every Gemini node the key its provider needs, checked up front.
@@ -567,10 +590,13 @@ def _set_llm_keys(graph: dict, where: str, gemini_api_key: str,
     """
     gemini_key = (gemini_api_key or "").strip()
     router_key = (openrouter_api_key or "").strip()
+    router_available = bool(router_key or os.environ.get(OPENROUTER_ENV, "").strip())
     for nid in [n for n, node in graph.items() if node.get("class_type") == "Ask_Gemini_Batch"]:
         inputs = graph[nid]["inputs"]
         title = (graph[nid].get("_meta") or {}).get("title", nid)
         inputs["api_key"] = gemini_key
+        if not inputs.get("provider") and router_available:
+            _route_through_openrouter(inputs)
         if inputs.get("provider") == "openrouter":
             if not router_key and not os.environ.get(OPENROUTER_ENV, "").strip():
                 raise MissingKey(
