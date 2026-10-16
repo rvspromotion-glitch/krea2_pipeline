@@ -1556,11 +1556,35 @@ def test_a_single_v10_with_a_hero_prompt_needs_no_llm_key_at_all(monkeypatch):
     assert not [n for n in graph.values() if n["class_type"] == "Ask_Gemini_Batch"]
 
 
-def test_older_versions_still_need_the_gemini_key(monkeypatch):
+def test_older_versions_need_the_gemini_key_only_without_openrouter(monkeypatch):
     monkeypatch.delenv(graph_mod.GEMINI_ENV, raising=False)
+    monkeypatch.delenv(graph_mod.OPENROUTER_ENV, raising=False)
     with pytest.raises(graph_mod.MissingKey, match="gemini_api_key"):
-        graph_mod.patch("single", **dict(BASE, gemini_api_key="", version="v9",
-                                         eye_colour="green eyes"))
+        graph_mod.patch("single", **dict(BASE, gemini_api_key="", openrouter_api_key="",
+                                         version="v9", eye_colour="green eyes"))
+    # Gemini key only: the node calls Gemini directly, as it always has.
+    graph = graph_mod.patch("single", **dict(BASE, openrouter_api_key="", version="v9",
+                                             eye_colour="green eyes"))
+    gemini = [n for n in graph.values() if n["class_type"] == "Ask_Gemini_Batch"]
+    assert gemini and all(not n["inputs"].get("provider") for n in gemini)
+
+
+@pytest.mark.parametrize("version", [v for v in graph_mod.VERSIONS if v != "v10"])
+@pytest.mark.parametrize("mode", ["single", "carousel"])
+def test_with_an_openrouter_key_every_older_graph_goes_through_openrouter(version, mode, monkeypatch):
+    """One key and one bill: the Gemini calls of v1-v9 route through
+    OpenRouter, same model, with Grok behind it — and need no Google key."""
+    monkeypatch.delenv(graph_mod.GEMINI_ENV, raising=False)
+    kwargs = _job_kwargs(version, mode)
+    kwargs.update(gemini_api_key="", openrouter_api_key="router-key")
+    graph = graph_mod.patch(mode, **kwargs)
+    gemini = [n["inputs"] for n in graph.values() if n["class_type"] == "Ask_Gemini_Batch"]
+    assert gemini
+    for inputs in gemini:
+        assert inputs["provider"] == "openrouter"
+        assert inputs["openrouter_model"] == "google/" + inputs["model"]
+        assert inputs["fallback_model"].startswith("x-ai/grok")
+        assert inputs["openrouter_api_key"] == "router-key"
 
 
 def test_the_shipped_v10_graphs_carry_no_openrouter_key():

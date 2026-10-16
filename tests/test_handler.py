@@ -53,6 +53,14 @@ def job(**over):
     return {"input": payload}
 
 
+def test_an_older_graph_with_only_an_openrouter_key_renders(stub, monkeypatch):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    out = handler_mod.handler(job(gemini_api_key=""))
+    assert "error" not in out
+    gemini = [n for n in stub["submitted"].values() if n["class_type"] == "Ask_Gemini_Batch"]
+    assert gemini and all(n["inputs"]["provider"] == "openrouter" for n in gemini)
+
+
 # ── Happy path ───────────────────────────────────────────────────────────────
 
 def test_single_returns_one_base64_image(stub):
@@ -109,8 +117,15 @@ def test_an_unexpected_image_count_still_returns_them(stub):
 # ── Failure modes ────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("missing", ["trigger_word", "description", "gemini_api_key"])
-def test_missing_required_fields_are_input_errors(stub, missing):
-    out = handler_mod.handler(job(**{missing: ""}))
+def test_missing_required_fields_are_input_errors(stub, missing, monkeypatch):
+    blank = {missing: ""}
+    if missing == "gemini_api_key":
+        # Only missing when there is no OpenRouter key either: with one, the
+        # Gemini calls go through OpenRouter.
+        blank["openrouter_api_key"] = ""
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    out = handler_mod.handler(job(**blank))
     assert out["kind"] == "input"
     assert missing in out["error"]
 
