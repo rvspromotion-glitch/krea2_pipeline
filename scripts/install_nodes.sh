@@ -16,6 +16,12 @@ mkdir -p "$CUSTOM_NODES"
 while read -r name repo ref; do
   case "$name" in ""|\#*) continue ;; esac
   dest="${CUSTOM_NODES}/${name}"
+  # GitHub's tarball endpoint does not resolve `HEAD` to the default branch:
+  # for rgthree it served a 2023 `dev` branch that cannot load on this ComfyUI.
+  if [ "$ref" = "HEAD" ]; then
+    echo "[nodes] ERROR: ${name} has ref HEAD; pin a commit or name the branch" >&2
+    exit 1
+  fi
   echo "[nodes] ${name} <- ${repo}@${ref}"
   tmp="$(mktemp --suffix=.tar.gz)"
   curl -fSL --retry 5 --retry-delay 3 -o "$tmp" \
@@ -25,6 +31,10 @@ while read -r name repo ref; do
   # installed, which `HEAD` alone never tells you when a render misbehaves.
   top="$(tar -tzf "$tmp" | head -1)" || true
   echo "[nodes] ${name} is ${top%/}"
+  if [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && [[ "${top%/}" != *"-${ref}" ]]; then
+    echo "[nodes] ERROR: ${name} pinned to ${ref} but the download is ${top%/}" >&2
+    exit 1
+  fi
   tar -xzf "$tmp" -C "$dest" --strip-components=1
   rm -f "$tmp"
 done < "$LIST"

@@ -1,38 +1,49 @@
 # Custom node packages, installed at build time.  name  owner/repo  ref
 #
-# Refs are `HEAD` for now. Pin them to commit shas once a build is green: these
-# are third-party repos that can change under you, and "the Sunday render broke
-# and nothing in this repo changed" is a bad Monday.
+# Third-party packages are pinned to a commit. They used to say `HEAD`, which
+# is not a ref GitHub's tarball endpoint resolves the way git does: on the 17
+# Oct build it handed back rgthree's `dev` branch, untouched since Nov 2023,
+# whose import patches a ComfyUI function that no longer exists. rgthree failed
+# to load, the Power Lora Loader every v8-v10 graph uses went with it, and the
+# whole night run was rejected at validation. To move one forward: take the sha
+# from `git ls-remote https://github.com/<repo> refs/heads/<branch>`, change it
+# here, and render a test job before the night run does.
+#
+# Our own packages (rvspromotion-glitch/*) follow `main` by name, so a merged
+# fix reaches the next build without a bump here. CI passes NODES_REFRESH so
+# that step is never served from cache.
+#
+# install_nodes.sh refuses `HEAD`, and fails the build if a pinned sha is not
+# what the download contains.
 #
 # Only six of the twenty-three node types in the two graphs come from here; the
-# rest are core ComfyUI. verify_nodes.py prints, on every build, which package
-# supplied which node and which packages supplied nothing — trim this list from
-# that output rather than from guesswork, and the build will fail loudly if you
-# take out one that was needed.
+# rest are core ComfyUI. verify_nodes.py prints which package supplied which
+# node and which packages supplied nothing — trim this list from that output
+# rather than from guesswork.
 #
 # Known-required (they provide nodes the graphs reference):
-BatchnodeI9                 rvspromotion-glitch/BatchnodeI9         HEAD
-ComfyUI-KJNodes             kijai/ComfyUI-KJNodes                   HEAD
-ComfyUI-Impact-Pack         ltdrdata/ComfyUI-Impact-Pack            HEAD
-comfyui-krea2edit           lbouaraba/comfyui-krea2edit             HEAD
+BatchnodeI9                 rvspromotion-glitch/BatchnodeI9         main
+ComfyUI-KJNodes             kijai/ComfyUI-KJNodes                   17195fcfa8a05f601b766a0f09c9733284f47416
+ComfyUI-Impact-Pack         ltdrdata/ComfyUI-Impact-Pack            429d0159ad429e64d2b3916e6e7be9c22d025c3c
+comfyui-krea2edit           lbouaraba/comfyui-krea2edit             13ef60f20828949becada815d3cbc371eb5ccaab
 # v8's closing pass: ACGRealismStack does the depth-masked grain, chromatic
 # aberration, contact shadows and defocus in one node.
-ACG_Realism_Nodes           rvspromotion-glitch/ACG_Realism_Nodes   HEAD
+ACG_Realism_Nodes           rvspromotion-glitch/ACG_Realism_Nodes   main
 # v10's carousel: Seedream 4.x Edit Sequential on AtlasCloud draws the slides
 # after the hero. Needs atlascloud_api_key in the job (or ATLASCLOUD_API_KEY).
-AtlasNode                   rvspromotion-glitch/AtlasNode           HEAD
+AtlasNode                   rvspromotion-glitch/AtlasNode           main
 
 # Carried from the pod the workflows were authored on. One of these supplies
 # MoreJPEG; the rest are almost certainly dead weight on these two graphs.
-rgthree-comfy               rgthree/rgthree-comfy                   HEAD
-ComfyUI-Easy-Use            yolain/ComfyUI-Easy-Use                 HEAD
-ComfyUI_LayerStyle          chflame163/ComfyUI_LayerStyle           HEAD
-ComfyUI-DepthAnythingV2     kijai/ComfyUI-DepthAnythingV2           HEAD
-comfyui-krea2-conditioning  huwhitememes/comfyui-krea2-conditioning HEAD
-ComfyUI-NovaNoiser          Aloukik21/ComfyUI-NovaNoiser            HEAD
-krea-reference              kgilper/krea-reference                  HEAD
-ComfyUI-Anima-PiD           sorryhyun/ComfyUI-Anima-PiD             HEAD
-comfyui-realisim-enhancor   amrnidal999-tech/comfyui-realisim-enhancor HEAD
+rgthree-comfy               rgthree/rgthree-comfy                   d7297b42f0fa78bec1c0411478f887423c249502
+ComfyUI-Easy-Use            yolain/ComfyUI-Easy-Use                 4ba22aa1ec2dd606995574d93d70c6c8a3744859
+ComfyUI_LayerStyle          chflame163/ComfyUI_LayerStyle           51977b27869af9369e3d11a75d6fe8eb706f9821
+ComfyUI-DepthAnythingV2     kijai/ComfyUI-DepthAnythingV2           553187872eeb1d52e50dc53209fa57e569609a72
+comfyui-krea2-conditioning  huwhitememes/comfyui-krea2-conditioning 729cda4fade982988a375b01928f515458407a5c
+ComfyUI-NovaNoiser          Aloukik21/ComfyUI-NovaNoiser            25aee1ceec169e179f4162b467c57838188788c3
+krea-reference              kgilper/krea-reference                  b1062390d9a4eeac8a249db18ea5bb826002821b
+ComfyUI-Anima-PiD           sorryhyun/ComfyUI-Anima-PiD             a212facd634a9ee5488d5c6b6cc2f8e79e1def07
+comfyui-realisim-enhancor   amrnidal999-tech/comfyui-realisim-enhancor 46c221ccda903e2f9ad0ec572ff6e866aa6eae0d
 ComfyUI-GridSplit           workordie/ComfyUI-GridSplit             b9941964ff879487aa3e9433b174548039748453
-savezipi9                   rvspromotion-glitch/savezipi9           HEAD
-RES4LYF                     ClownsharkBatwing/RES4LYF               HEAD
+savezipi9                   rvspromotion-glitch/savezipi9           main
+RES4LYF                     ClownsharkBatwing/RES4LYF               56e44755d866c87ff9cb4b6608c8e42155db6ecc
