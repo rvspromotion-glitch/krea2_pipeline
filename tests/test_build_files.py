@@ -324,8 +324,9 @@ def test_fastapi_is_held_below_the_release_that_needs_protobuf_5():
 
 
 def test_custom_nodes_are_fetched_again_on_every_ci_build():
-    """`HEAD` refs only mean anything if the install step re-runs. Cached, it
-    kept the savezipi9 node from before its OpenRouter fallback was merged."""
+    """Our own packages follow `main`, which only means anything if the install
+    step re-runs. Cached, it kept the savezipi9 node from before its OpenRouter
+    fallback was merged."""
     lines = DOCKERFILE.splitlines()
     install = next(i for i, l in enumerate(lines) if "install_nodes.sh /build/custom_nodes.txt" in l)
     arg = next(i for i, l in enumerate(lines) if l.startswith("ARG NODES_REFRESH"))
@@ -335,3 +336,74 @@ def test_custom_nodes_are_fetched_again_on_every_ci_build():
         "the node install RUN must use NODES_REFRESH, or a new value does not bust its cache"
     workflow = (REPO / ".github" / "workflows" / "docker.yml").read_text()
     assert "NODES_REFRESH=${{ github.sha }}" in workflow
+
+
+def _node_rows():
+    for line in (REPO / "custom_nodes.txt").read_text().splitlines():
+        if line.strip() and not line.lstrip().startswith("#"):
+            yield line.split()
+
+
+def test_third_party_nodes_are_pinned_and_ours_follow_main():
+    """`HEAD` got rgthree's 2023 dev branch from the tarball endpoint, which
+    cannot load on this ComfyUI — and with it went every v8-v10 render."""
+    for name, repo, ref in _node_rows():
+        if repo.startswith("rvspromotion-glitch/"):
+            assert ref == "main", f"{name}: our own packages follow main"
+        else:
+            assert re.fullmatch(r"[0-9a-f]{40}", ref), f"{name}: pin a full commit sha, not {ref}"
+
+
+def _run_install(tmp_path, rows, top_dir):
+    """install_nodes.sh against a fake curl that serves one tarball."""
+    import subprocess
+    import tarfile
+
+    src = tmp_path / "src" / top_dir
+    src.mkdir(parents=True)
+    (src / "__init__.py").write_text("")
+    tarball = tmp_path / "pkg.tar.gz"
+    with tarfile.open(tarball, "w:gz") as tar:
+        tar.add(src, arcname=top_dir)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_curl = bin_dir / "curl"
+    fake_curl.write_text(f"""#!/usr/bin/env bash
+while [ $# -gt 0 ]; do [ "$1" = "-o" ] && {{ cp {tarball} "$2"; }}; shift; done
+""")
+    fake_pip = bin_dir / "pip"
+    fake_pip.write_text("#!/usr/bin/env bash\nexit 0\n")
+    fake_curl.chmod(0o755)
+    fake_pip.chmod(0o755)
+    listing = tmp_path / "nodes.txt"
+    listing.write_text("\n".join(" ".join(r) for r in rows) + "\n")
+    import os
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", PIP_CONSTRAINT="/dev/null")
+    return subprocess.run(["bash", str(REPO / "scripts" / "install_nodes.sh"), str(listing),
+                           str(tmp_path / "custom_nodes")], env=env, capture_output=True,
+                          text=True)
+
+
+SHA = "d7297b42f0fa78bec1c0411478f887423c249502"
+OTHER = "5f940ddfbb83ff9c667f32ae7d0c3ad0bb8cc9ee"
+
+
+def test_install_refuses_a_head_ref(tmp_path):
+    result = _run_install(tmp_path, [("rgthree-comfy", "rgthree/rgthree-comfy", "HEAD")],
+                          f"rgthree-comfy-{SHA}")
+    assert result.returncode != 0
+    assert "ref HEAD" in result.stderr
+
+
+def test_install_fails_when_the_download_is_not_the_pinned_commit(tmp_path):
+    result = _run_install(tmp_path, [("rgthree-comfy", "rgthree/rgthree-comfy", SHA)],
+                          f"rgthree-comfy-{OTHER}")
+    assert result.returncode != 0
+    assert "pinned to" in result.stderr
+
+
+def test_install_takes_the_pinned_commit(tmp_path):
+    result = _run_install(tmp_path, [("rgthree-comfy", "rgthree/rgthree-comfy", SHA)],
+                          f"rgthree-comfy-{SHA}")
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "custom_nodes" / "rgthree-comfy" / "__init__.py").exists()
